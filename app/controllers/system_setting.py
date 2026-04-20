@@ -23,6 +23,7 @@ class SystemSettingController:
         data = await setting.to_dict()
         data["smtp_password"] = self._mask_secret(data.get("smtp_password"))
         data["webdav_password"] = self._mask_secret(data.get("webdav_password"))
+        data["llm_api_key"] = self._mask_secret(data.get("llm_api_key"))
         return data
 
     async def get_or_create(self) -> SystemSetting:
@@ -106,6 +107,8 @@ class SystemSettingController:
             payload.pop("smtp_password", None)
         if payload.get("webdav_password") == "******":
             payload.pop("webdav_password", None)
+        if payload.get("llm_api_key") == "******":
+            payload.pop("llm_api_key", None)
         setting.update_from_dict(payload)
         await setting.save()
         logger.info("[settings.update] success setting_id={}", setting.id)

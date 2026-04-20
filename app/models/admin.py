@@ -202,6 +202,12 @@ class SystemSetting(BaseModel, TimestampMixin):
     webdav_share_default_expire_hours = fields.IntField(default=168, description="WebDAV默认分享有效时长(小时)")
     webdav_signature_secret = fields.CharField(max_length=255, null=True, description="WebDAV签名密钥")
 
+    llm_provider = fields.CharField(max_length=32, default="openai", description="LLM提供商", index=True)
+    llm_base_url = fields.CharField(max_length=500, null=True, description="LLM接口地址")
+    llm_api_key = fields.CharField(max_length=255, null=True, description="LLM API Key")
+    llm_model = fields.CharField(max_length=100, default="mock-rag-v1", description="LLM模型名称")
+    llm_timeout_seconds = fields.IntField(default=20, description="LLM超时(秒)")
+
     class Meta:
         table = "system_setting"
 

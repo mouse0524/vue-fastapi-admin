@@ -111,6 +111,12 @@ class Settings(BaseSettings):
         "timezone": "Asia/Shanghai",  # Timezone setting
     }
     DATETIME_FORMAT: str = "%Y-%m-%d %H:%M:%S"
+    KB_DEFAULT_TOP_K: int = 5
+    KB_DEFAULT_MODEL: str = "mock-rag-v1"
+    LLM_PROVIDER: str = "openai"
+    LLM_BASE_URL: str = "https://api.openai.com/v1"
+    LLM_API_KEY: str = ""
+    LLM_TIMEOUT_SECONDS: int = 20
 
 
 settings = Settings()

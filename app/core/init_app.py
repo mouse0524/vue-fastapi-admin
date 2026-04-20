@@ -370,6 +370,105 @@ async def init_menus():
             redirect="",
         )
 
+    kb_parent = await Menu.filter(path="/kb").first()
+    if not kb_parent:
+        kb_parent = await Menu.create(
+            menu_type=MenuType.CATALOG,
+            name="AI知识库",
+            path="/kb",
+            order=6,
+            parent_id=0,
+            icon="material-symbols:auto-awesome-outline",
+            is_hidden=False,
+            component="Layout",
+            keepalive=False,
+            redirect="/kb/chat",
+        )
+    else:
+        kb_parent.menu_type = MenuType.CATALOG
+        kb_parent.name = "AI知识库"
+        kb_parent.order = 6
+        kb_parent.parent_id = 0
+        kb_parent.icon = "material-symbols:auto-awesome-outline"
+        kb_parent.is_hidden = False
+        kb_parent.component = "Layout"
+        kb_parent.keepalive = False
+        kb_parent.redirect = "/kb/chat"
+        await kb_parent.save()
+
+    kb_children = [
+        {
+            "name": "知识空间",
+            "path": "space",
+            "order": 1,
+            "icon": "material-symbols:hub-outline",
+            "component": "/kb/space",
+        },
+        {
+            "name": "文档中心",
+            "path": "document",
+            "order": 2,
+            "icon": "material-symbols:docs-outline",
+            "component": "/kb/document",
+        },
+        {
+            "name": "智能问答",
+            "path": "chat",
+            "order": 3,
+            "icon": "material-symbols:chat-outline",
+            "component": "/kb/chat",
+        },
+        {
+            "name": "反馈标注",
+            "path": "feedback",
+            "order": 5,
+            "icon": "material-symbols:feedback-outline",
+            "component": "/kb/feedback",
+        },
+        {
+            "name": "会话记录",
+            "path": "session",
+            "order": 4,
+            "icon": "material-symbols:history",
+            "component": "/kb/session",
+        },
+        {
+            "name": "模型日志",
+            "path": "llm-log",
+            "order": 6,
+            "icon": "material-symbols:monitoring-outline",
+            "component": "/kb/llm-log",
+        },
+    ]
+    for child in kb_children:
+        child_menu = await Menu.filter(
+            Q(parent_id=kb_parent.id, path=child["path"]) | Q(component=child["component"])
+        ).first()
+        if child_menu:
+            child_menu.name = child["name"]
+            child_menu.path = child["path"]
+            child_menu.order = child["order"]
+            child_menu.parent_id = kb_parent.id
+            child_menu.icon = child["icon"]
+            child_menu.is_hidden = False
+            child_menu.component = child["component"]
+            child_menu.keepalive = False
+            child_menu.redirect = ""
+            await child_menu.save()
+        else:
+            await Menu.create(
+                menu_type=MenuType.MENU,
+                name=child["name"],
+                path=child["path"],
+                order=child["order"],
+                parent_id=kb_parent.id,
+                icon=child["icon"],
+                is_hidden=False,
+                component=child["component"],
+                keepalive=False,
+                redirect="",
+            )
+
 
 async def init_apis():
     await api_controller.refresh_api()
@@ -454,6 +553,26 @@ async def init_roles():
             "/api/v1/webdav/share/delete",
         ]
     )
+    kb_apis = await Api.filter(
+        path__in=[
+            "/api/v1/kb/space/list",
+            "/api/v1/kb/space/create",
+            "/api/v1/kb/space/update",
+            "/api/v1/kb/document/list",
+            "/api/v1/kb/document/create",
+            "/api/v1/kb/document/upload",
+            "/api/v1/kb/document/reparse",
+            "/api/v1/kb/document/delete",
+            "/api/v1/kb/session/list",
+            "/api/v1/kb/session/create",
+            "/api/v1/kb/session/messages",
+            "/api/v1/kb/chat/ask",
+            "/api/v1/kb/feedback/create",
+            "/api/v1/kb/feedback/list",
+            "/api/v1/kb/llm/log/list",
+            "/api/v1/kb/llm/test",
+        ]
+    )
     basic_apis = await Api.filter(
         Q(method__in=["GET"]) | Q(tags="基础模块") | Q(path__in=["/api/v1/base/update_password"])
     )
@@ -465,6 +584,9 @@ async def init_roles():
     settings_menus = await Menu.filter(Q(component="/system/settings"))
     webdav_menus = await Menu.filter(
         Q(path="/outbound") | Q(component="/system/webdav") | Q(component="/system/webdav-share")
+    )
+    kb_menus = await Menu.filter(
+        Q(path="/kb") | Q(component__startswith="/kb/")
     )
 
     for role_name in ["用户", "渠道商", "技术", "客服"]:
@@ -491,8 +613,10 @@ async def init_roles():
 
     await role_map["管理员"].apis.add(*settings_apis)
     await role_map["管理员"].apis.add(*webdav_apis)
+    await role_map["管理员"].apis.add(*kb_apis)
     await role_map["管理员"].menus.add(*settings_menus)
     await role_map["管理员"].menus.add(*webdav_menus)
+    await role_map["管理员"].menus.add(*kb_menus)
 
 
 async def init_data():

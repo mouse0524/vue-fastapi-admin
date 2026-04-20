@@ -35,6 +35,12 @@ class SystemSettingUpdateIn(BaseModel):
     webdav_share_default_expire_hours: int = 168
     webdav_signature_secret: str | None = None
 
+    llm_provider: str = "openai"
+    llm_base_url: str | None = None
+    llm_api_key: str | None = None
+    llm_model: str = "mock-rag-v1"
+    llm_timeout_seconds: int = 20
+
 
 class PublicSiteConfigOut(BaseModel):
     site_title: str
