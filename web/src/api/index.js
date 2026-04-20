@@ -90,6 +90,7 @@ export default {
   // settings
   getSystemSettings: () => request.get('/settings/get'),
   updateSystemSettings: (data = {}) => request.post('/settings/update', data),
+  testWebdavConnection: (data = {}) => request.post('/settings/webdav/test', data),
   uploadSiteLogo: (file) => {
     const formData = new FormData()
     formData.append('file', file)
@@ -97,4 +98,9 @@ export default {
       headers: { 'Content-Type': 'multipart/form-data' },
     })
   },
+  // webdav
+  webdavList: (params = {}) => request.get('/webdav/list', { params }),
+  webdavCreateShare: (data = {}) => request.post('/webdav/share/create', data),
+  webdavShareList: (params = {}) => request.get('/webdav/share/list', { params }),
+  webdavShareDelete: (data = {}) => request.post('/webdav/share/delete', data),
 }

@@ -195,5 +195,24 @@ class SystemSetting(BaseModel, TimestampMixin):
         description="注册审核驳回邮件模板",
     )
 
+    webdav_enabled = fields.BooleanField(default=False, description="是否启用WebDAV", index=True)
+    webdav_base_url = fields.CharField(max_length=500, null=True, description="WebDAV基础地址")
+    webdav_username = fields.CharField(max_length=120, null=True, description="WebDAV用户名")
+    webdav_password = fields.CharField(max_length=255, null=True, description="WebDAV密码")
+    webdav_share_default_expire_hours = fields.IntField(default=168, description="WebDAV默认分享有效时长(小时)")
+    webdav_signature_secret = fields.CharField(max_length=255, null=True, description="WebDAV签名密钥")
+
     class Meta:
         table = "system_setting"
+
+
+class WebDavShareLink(BaseModel, TimestampMixin):
+    code = fields.CharField(max_length=32, unique=True, description="分享码", index=True)
+    file_path = fields.CharField(max_length=1000, description="文件路径")
+    file_name = fields.CharField(max_length=255, description="文件名")
+    expire_time = fields.DatetimeField(description="过期时间", index=True)
+    is_active = fields.BooleanField(default=True, description="是否生效", index=True)
+    created_by = fields.BigIntField(description="创建人ID", index=True)
+
+    class Meta:
+        table = "webdav_share_link"

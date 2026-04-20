@@ -84,6 +84,10 @@ class HttpAuditLogMiddleware(BaseHTTPMiddleware):
         return args
 
     async def get_response_body(self, request: Request, response: Response) -> Any:
+        content_type = (response.headers.get("content-type") or "").lower()
+        if "application/json" not in content_type:
+            return {"msg": "Non-JSON response skipped", "content_type": content_type or None}
+
         # 检查Content-Length
         content_length = response.headers.get("content-length")
         if content_length and int(content_length) > self.max_body_size:
@@ -121,7 +125,9 @@ class HttpAuditLogMiddleware(BaseHTTPMiddleware):
             try:
                 return json.loads(v)
             except (ValueError, TypeError):
-                pass
+                if isinstance(v, bytes):
+                    v = v.decode("utf-8", errors="ignore")
+                return {"raw": str(v)}
         return v
 
     async def _async_iter(self, items: list[bytes]) -> AsyncGenerator[bytes, None]:
@@ -170,7 +176,15 @@ class HttpAuditLogMiddleware(BaseHTTPMiddleware):
 
             data["request_args"] = request.state.request_args
             data["response_body"] = await self.get_response_body(request, response)
-            await AuditLog.create(**data)
+            try:
+                await AuditLog.create(**data)
+            except Exception as exc:
+                logger.warning(
+                    "[http.audit] write failed path={} method={} error={}",
+                    request.url.path,
+                    request.method,
+                    str(exc),
+                )
 
         return response
 

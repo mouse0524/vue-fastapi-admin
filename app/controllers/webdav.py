@@ -1,0 +1,432 @@
+import secrets
+from base64 import b64encode
+from datetime import datetime, timedelta, timezone
+from email.utils import parsedate_to_datetime
+from pathlib import PurePosixPath
+from typing import Any
+from urllib.parse import quote, unquote, urlparse
+from xml.etree import ElementTree as ET
+import json
+
+import httpx
+from fastapi import HTTPException, UploadFile
+
+from app.core.redis_client import execute_redis
+from app.log import logger
+from app.models.admin import WebDavShareLink
+from app.controllers.system_setting import system_setting_controller
+
+
+class WebDavController:
+    LIST_CACHE_TTL_SECONDS = 24 * 60 * 60
+
+    @staticmethod
+    def _auth(conf: dict) -> tuple[str, str]:
+        return conf["webdav_username"], conf["webdav_password"]
+
+    def _client(self, conf: dict, timeout: float) -> httpx.AsyncClient:
+        return httpx.AsyncClient(timeout=timeout)
+
+    def _auth_headers(self, conf: dict, headers: dict[str, str] | None = None) -> dict[str, str]:
+        username, password = self._auth(conf)
+        token = b64encode(f"{username}:{password}".encode("utf-8")).decode("ascii")
+        merged = {"Authorization": f"Basic {token}"}
+        if headers:
+            merged.update(headers)
+        return merged
+
+    @staticmethod
+    def _raise_webdav_error(action: str, status_code: int) -> HTTPException:
+        if status_code in {401, 403}:
+            return HTTPException(status_code=502, detail="WebDAV认证失败，请检查系统设置中的账号和密码")
+        if status_code == 404:
+            return HTTPException(status_code=404, detail=f"{action}失败：目标路径不存在")
+        if status_code == 405:
+            return HTTPException(status_code=400, detail=f"{action}失败：当前路径不支持该操作")
+        if status_code == 409:
+            return HTTPException(status_code=409, detail=f"{action}失败：资源冲突")
+        if status_code == 423:
+            return HTTPException(status_code=423, detail=f"{action}失败：资源被锁定")
+        if status_code == 429:
+            return HTTPException(status_code=429, detail="WebDAV请求过于频繁，请稍后重试")
+        if status_code >= 500:
+            return HTTPException(status_code=502, detail="WebDAV服务暂时不可用，请稍后重试")
+        return HTTPException(status_code=400, detail=f"{action}失败：WebDAV返回状态码 {status_code}")
+
+    @staticmethod
+    def _raise_webdav_network_error(action: str, exc: Exception) -> HTTPException:
+        if isinstance(exc, httpx.TimeoutException):
+            return HTTPException(status_code=504, detail=f"{action}超时，请稍后重试")
+        if isinstance(exc, httpx.ConnectError):
+            return HTTPException(status_code=502, detail="无法连接WebDAV服务，请检查服务地址和网络")
+        if isinstance(exc, httpx.RequestError):
+            return HTTPException(status_code=502, detail=f"{action}失败：与WebDAV服务通信异常")
+        return HTTPException(status_code=502, detail=f"{action}失败：网络异常")
+
+    @staticmethod
+    def _now_like(dt: datetime) -> datetime:
+        return datetime.now(dt.tzinfo) if dt.tzinfo is not None else datetime.now()
+
+    @staticmethod
+    def _normalize_path(path: str | None) -> str:
+        p = (path or "/").strip()
+        if not p:
+            p = "/"
+        if not p.startswith("/"):
+            p = f"/{p}"
+        p = p.replace("\\", "/")
+        while "//" in p:
+            p = p.replace("//", "/")
+        pure = PurePosixPath(p)
+        if ".." in pure.parts:
+            raise HTTPException(status_code=400, detail="非法路径")
+        norm = str(pure)
+        if not norm.startswith("/"):
+            norm = f"/{norm}"
+        return norm
+
+    @staticmethod
+    def _normalize_base_prefix(path: str | None) -> str:
+        p = (path or "").strip().replace("\\", "/")
+        if not p:
+            return ""
+        if not p.startswith("/"):
+            p = f"/{p}"
+        while "//" in p:
+            p = p.replace("//", "/")
+        pure = PurePosixPath(p)
+        norm = str(pure)
+        if norm == ".":
+            return ""
+        if not norm.startswith("/"):
+            norm = f"/{norm}"
+        if norm != "/":
+            norm = norm.rstrip("/")
+        return norm
+
+    @staticmethod
+    async def _get_config() -> dict:
+        setting = await system_setting_controller.get_or_create()
+        data = await setting.to_dict()
+        if not data.get("webdav_enabled"):
+            raise HTTPException(status_code=400, detail="WebDAV未启用，请先在系统设置中启用")
+        if not data.get("webdav_base_url"):
+            raise HTTPException(status_code=400, detail="WebDAV Base URL 未配置")
+        if not data.get("webdav_username") or not data.get("webdav_password"):
+            raise HTTPException(status_code=400, detail="WebDAV账号或密码未配置")
+        return data
+
+    @staticmethod
+    def _build_url(base_url: str, path: str) -> str:
+        base = base_url.rstrip("/")
+        safe_path = quote(path, safe="/()[]-_.~")
+        return f"{base}{safe_path}"
+
+    @staticmethod
+    def _list_cache_key(path: str) -> str:
+        return f"webdav:list:{quote(path, safe='')}"
+
+    @staticmethod
+    def _parent_path(path: str) -> str:
+        if path == "/":
+            return "/"
+        parts = [p for p in path.split("/") if p]
+        if len(parts) <= 1:
+            return "/"
+        return "/" + "/".join(parts[:-1])
+
+    async def _get_cached_list(self, path: str) -> list[dict[str, Any]] | None:
+        key = self._list_cache_key(path)
+        try:
+            raw = await execute_redis("get", key)
+            if not raw:
+                return None
+            data = json.loads(raw)
+            if isinstance(data, list):
+                return data
+        except Exception as exc:
+            logger.warning("[webdav.cache.get] key={} error={}", key, str(exc))
+        return None
+
+    async def _set_cached_list(self, path: str, rows: list[dict[str, Any]]) -> None:
+        key = self._list_cache_key(path)
+        try:
+            await execute_redis("setex", key, self.LIST_CACHE_TTL_SECONDS, json.dumps(rows, ensure_ascii=False))
+        except Exception as exc:
+            logger.warning("[webdav.cache.set] key={} error={}", key, str(exc))
+
+    async def _invalidate_list_cache(self, paths: list[str]) -> None:
+        keys = [self._list_cache_key(path) for path in set(paths) if path]
+        if not keys:
+            return
+        try:
+            await execute_redis("delete", *keys)
+        except Exception as exc:
+            logger.warning("[webdav.cache.delete] keys={} error={}", ",".join(keys), str(exc))
+
+    @staticmethod
+    def _parse_file_list(xml_text: str, current_path: str, base_prefix: str) -> list[dict[str, Any]]:
+        ns = {"d": "DAV:"}
+        root = ET.fromstring(xml_text)
+        rows: list[dict[str, Any]] = []
+
+        for resp in root.findall("d:response", ns):
+            href = resp.findtext("d:href", default="", namespaces=ns)
+            if not href:
+                continue
+            parsed = urlparse(href)
+            full_path = unquote(parsed.path)
+            if not full_path:
+                continue
+
+            if base_prefix and full_path.startswith(base_prefix):
+                full_path = full_path[len(base_prefix) :]
+                if not full_path.startswith("/"):
+                    full_path = f"/{full_path}"
+
+            path_for_match = full_path
+            if path_for_match.endswith("/") and path_for_match != "/":
+                path_for_match = path_for_match[:-1]
+
+            base_for_match = current_path
+            if base_for_match.endswith("/") and base_for_match != "/":
+                base_for_match = base_for_match[:-1]
+
+            if path_for_match == base_for_match:
+                continue
+
+            prop = resp.find("d:propstat/d:prop", ns)
+            if prop is None:
+                continue
+
+            is_dir = prop.find("d:resourcetype/d:collection", ns) is not None
+            name = unquote(path_for_match.split("/")[-1])
+            if not name:
+                continue
+
+            size_text = prop.findtext("d:getcontentlength", default="0", namespaces=ns)
+            try:
+                size = int(size_text or 0)
+            except ValueError:
+                size = 0
+
+            mod_time_raw = prop.findtext("d:getlastmodified", default="", namespaces=ns)
+            mod_time = ""
+            if mod_time_raw:
+                try:
+                    mod_time = parsedate_to_datetime(mod_time_raw).strftime("%Y-%m-%d %H:%M:%S")
+                except Exception:
+                    mod_time = mod_time_raw
+
+            rows.append(
+                {
+                    "name": name,
+                    "path": path_for_match,
+                    "is_dir": is_dir,
+                    "size": size,
+                    "mod_time": mod_time,
+                }
+            )
+
+        rows.sort(key=lambda x: (not x["is_dir"], x["name"].lower()))
+        return rows
+
+    async def list_dir(self, path: str) -> list[dict[str, Any]]:
+        conf = await self._get_config()
+        norm_path = self._normalize_path(path)
+        logger.info("[webdav.list] path={}", norm_path)
+
+        cached = await self._get_cached_list(norm_path)
+        if cached is not None:
+            logger.info("[webdav.list] cache_hit path={} count={}", norm_path, len(cached))
+            return cached
+
+        body = """<?xml version=\"1.0\" encoding=\"utf-8\" ?><d:propfind xmlns:d=\"DAV:\"><d:allprop/></d:propfind>"""
+        url = self._build_url(conf["webdav_base_url"], norm_path)
+        try:
+            async with self._client(conf, timeout=30.0) as client:
+                res = await client.request(
+                "PROPFIND",
+                url,
+                content=body,
+                headers=self._auth_headers(conf, {"Depth": "1", "Content-Type": "application/xml"}),
+                )
+        except httpx.RequestError as exc:
+            raise self._raise_webdav_network_error("读取目录", exc) from exc
+        if res.status_code not in {200, 207}:
+            raise self._raise_webdav_error("读取目录", res.status_code)
+        parsed = urlparse(conf["webdav_base_url"])
+        base_prefix = self._normalize_base_prefix(parsed.path)
+        rows = self._parse_file_list(res.text, norm_path, base_prefix)
+        await self._set_cached_list(norm_path, rows)
+        logger.info("[webdav.list] success path={} count={}", norm_path, len(rows))
+        return rows
+
+    async def upload_file(self, path: str, file: UploadFile):
+        conf = await self._get_config()
+        norm_path = self._normalize_path(path)
+        filename = (file.filename or "").strip()
+        if not filename:
+            raise HTTPException(status_code=400, detail="文件名为空")
+        if "/" in filename or "\\" in filename:
+            raise HTTPException(status_code=400, detail="文件名非法")
+
+        data = await file.read()
+        target_path = f"{norm_path.rstrip('/')}/{filename}" if norm_path != "/" else f"/{filename}"
+        url = self._build_url(conf["webdav_base_url"], target_path)
+
+        logger.info("[webdav.upload] path={} filename={} size={}", norm_path, filename, len(data))
+        try:
+            async with self._client(conf, timeout=180.0) as client:
+                res = await client.put(
+                    url,
+                    content=data,
+                    headers=self._auth_headers(conf, {"Content-Type": file.content_type or "application/octet-stream"}),
+                )
+        except httpx.RequestError as exc:
+            raise self._raise_webdav_network_error("上传文件", exc) from exc
+        if res.status_code not in {200, 201, 204}:
+            raise self._raise_webdav_error("上传文件", res.status_code)
+        await self._invalidate_list_cache([norm_path])
+
+    async def create_folder(self, path: str, name: str):
+        conf = await self._get_config()
+        norm_path = self._normalize_path(path)
+        folder_name = (name or "").strip()
+        if not folder_name:
+            raise HTTPException(status_code=400, detail="目录名不能为空")
+        if "/" in folder_name or "\\" in folder_name:
+            raise HTTPException(status_code=400, detail="目录名非法")
+
+        target_path = f"{norm_path.rstrip('/')}/{folder_name}" if norm_path != "/" else f"/{folder_name}"
+        url = self._build_url(conf["webdav_base_url"], target_path)
+        logger.info("[webdav.mkdir] path={} name={}", norm_path, folder_name)
+
+        try:
+            async with self._client(conf, timeout=30.0) as client:
+                res = await client.request("MKCOL", url, headers=self._auth_headers(conf))
+        except httpx.RequestError as exc:
+            raise self._raise_webdav_network_error("创建目录", exc) from exc
+        if res.status_code not in {200, 201, 204}:
+            raise self._raise_webdav_error("创建目录", res.status_code)
+        await self._invalidate_list_cache([norm_path])
+
+    async def delete_path(self, path: str):
+        conf = await self._get_config()
+        norm_path = self._normalize_path(path)
+        url = self._build_url(conf["webdav_base_url"], norm_path)
+        logger.info("[webdav.delete] path={}", norm_path)
+
+        try:
+            async with self._client(conf, timeout=30.0) as client:
+                res = await client.request("DELETE", url, headers=self._auth_headers(conf))
+        except httpx.RequestError as exc:
+            raise self._raise_webdav_network_error("删除资源", exc) from exc
+        if res.status_code not in {200, 204}:
+            raise self._raise_webdav_error("删除资源", res.status_code)
+        await self._invalidate_list_cache([self._parent_path(norm_path), norm_path])
+
+    async def create_share(self, *, file_path: str, file_name: str, created_by: int, expire_hours: int | None = None) -> dict:
+        conf = await self._get_config()
+        norm_path = self._normalize_path(file_path)
+
+        existing = (
+            await WebDavShareLink.filter(file_path=norm_path, created_by=created_by, is_active=True)
+            .order_by("-id")
+            .first()
+        )
+        if existing and self._now_like(existing.expire_time) <= existing.expire_time:
+            logger.info(
+                "[webdav.share.reuse] share_id={} code={} file_path={}",
+                existing.id,
+                existing.code,
+                existing.file_path,
+            )
+            data = await existing.to_dict()
+            data["reused"] = True
+            return data
+
+        hours = expire_hours if expire_hours and expire_hours > 0 else int(conf.get("webdav_share_default_expire_hours") or 168)
+        code = secrets.token_urlsafe(6)[:8]
+        expire_time = datetime.now(timezone.utc) + timedelta(hours=hours)
+
+        share = await WebDavShareLink.create(
+            code=code,
+            file_path=norm_path,
+            file_name=file_name,
+            expire_time=expire_time,
+            is_active=True,
+            created_by=created_by,
+        )
+        logger.info("[webdav.share.create] share_id={} code={} file_path={}", share.id, share.code, share.file_path)
+        data = await share.to_dict()
+        data["reused"] = False
+        return data
+
+    async def list_shares(
+        self,
+        *,
+        created_by: int | None,
+        page: int,
+        page_size: int,
+        include_history: bool = False,
+    ) -> tuple[int, list[WebDavShareLink]]:
+        q = WebDavShareLink.all()
+        if created_by is not None:
+            q = q.filter(created_by=created_by)
+        if not include_history:
+            q = q.filter(is_active=True)
+        q = q.order_by("-id")
+        total = await q.count()
+        rows = await q.offset((page - 1) * page_size).limit(page_size)
+        return total, rows
+
+    async def delete_share(self, share_id: int, created_by: int | None):
+        q = WebDavShareLink.filter(id=share_id)
+        if created_by is not None:
+            q = q.filter(created_by=created_by)
+        obj = await q.first()
+        if not obj:
+            raise HTTPException(status_code=404, detail="分享记录不存在")
+        await obj.delete()
+        logger.info("[webdav.share.delete] share_id={} created_by={}", share_id, created_by)
+
+    async def get_share(self, code: str) -> WebDavShareLink:
+        obj = await WebDavShareLink.filter(code=code, is_active=True).first()
+        if not obj:
+            raise HTTPException(status_code=404, detail="分享链接不存在")
+        if self._now_like(obj.expire_time) > obj.expire_time:
+            obj.is_active = False
+            await obj.save()
+            raise HTTPException(status_code=410, detail="分享链接已过期")
+        return obj
+
+    async def download_stream(self, file_path: str):
+        conf = await self._get_config()
+        norm_path = self._normalize_path(file_path)
+        url = self._build_url(conf["webdav_base_url"], norm_path)
+
+        client = self._client(conf, timeout=180.0)
+        try:
+            req = client.build_request("GET", url, headers=self._auth_headers(conf))
+            resp = await client.send(req, stream=True)
+        except httpx.RequestError as exc:
+            await client.aclose()
+            raise self._raise_webdav_network_error("下载文件", exc) from exc
+        if resp.status_code >= 400:
+            await resp.aclose()
+            await client.aclose()
+            raise self._raise_webdav_error("下载文件", resp.status_code)
+
+        async def iterator():
+            try:
+                async for chunk in resp.aiter_bytes():
+                    yield chunk
+            finally:
+                await resp.aclose()
+                await client.aclose()
+
+        return iterator, resp.headers
+
+
+webdav_controller = WebDavController()

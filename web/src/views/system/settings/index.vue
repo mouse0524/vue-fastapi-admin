@@ -25,6 +25,7 @@ defineOptions({ name: '系统设置' })
 const formRef = ref(null)
 const loading = ref(false)
 const saving = ref(false)
+const webdavTesting = ref(false)
 const logoUploading = ref(false)
 const previewVisible = ref(false)
 const appStore = useAppStore()
@@ -50,6 +51,12 @@ const form = ref({
   register_review_reject_subject: '注册审核结果通知',
   register_review_reject_is_html: true,
   register_review_reject_template: '您好，{contact_name}，您的{register_type}注册申请已驳回。驳回理由：{reason}',
+  webdav_enabled: false,
+  webdav_base_url: '',
+  webdav_username: '',
+  webdav_password: '',
+  webdav_share_default_expire_hours: 168,
+  webdav_signature_secret: '',
 })
 
 const previewParams = ref({
@@ -141,6 +148,21 @@ function save() {
       saving.value = false
     }
   })
+}
+
+async function testWebdavConnection() {
+  try {
+    webdavTesting.value = true
+    const res = await api.testWebdavConnection({
+      webdav_enabled: form.value.webdav_enabled,
+      webdav_base_url: form.value.webdav_base_url,
+      webdav_username: form.value.webdav_username,
+      webdav_password: form.value.webdav_password,
+    })
+    $message.success(res?.msg || 'WebDAV连接成功')
+  } finally {
+    webdavTesting.value = false
+  }
 }
 
 async function uploadLogo({ file, onFinish, onError }) {
@@ -246,6 +268,40 @@ function applyPresetHtmlTemplates() {
               </NFormItem>
               <NFormItem label="启用SSL">
                 <NSwitch v-model:value="form.smtp_use_ssl" />
+              </NFormItem>
+            </NCard>
+          </NTabPane>
+
+          <NTabPane name="webdav" tab="WebDAV管理">
+            <NCard size="small" title="WebDAV统一配置">
+              <NAlert type="info" class="mb-12">
+                这里统一维护外发网盘 WebDAV 配置；密码显示为掩码，保持不变可直接保存。
+              </NAlert>
+              <NFormItem label="启用WebDAV">
+                <NSwitch v-model:value="form.webdav_enabled" />
+              </NFormItem>
+              <NFormItem label="Base URL">
+                <NInput v-model:value="form.webdav_base_url" placeholder="例如 https://webdav.example.com/webdav" />
+              </NFormItem>
+              <NFormItem label="用户名">
+                <NInput v-model:value="form.webdav_username" placeholder="请输入WebDAV用户名" />
+              </NFormItem>
+              <NFormItem label="密码">
+                <NInput
+                  v-model:value="form.webdav_password"
+                  type="password"
+                  show-password-on="mousedown"
+                  placeholder="保持不变可留******"
+                />
+              </NFormItem>
+              <NFormItem label="默认分享时长(小时)">
+                <NInputNumber v-model:value="form.webdav_share_default_expire_hours" :min="1" :max="8760" />
+              </NFormItem>
+              <NFormItem label="签名密钥">
+                <NInput v-model:value="form.webdav_signature_secret" placeholder="用于外链签名校验（可选）" />
+              </NFormItem>
+              <NFormItem>
+                <NButton type="primary" ghost :loading="webdavTesting" @click="testWebdavConnection">测试连接</NButton>
               </NFormItem>
             </NCard>
           </NTabPane>

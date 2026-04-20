@@ -290,6 +290,86 @@ async def init_menus():
                 redirect="",
             )
 
+    outbound_parent = await Menu.filter(path="/outbound").first()
+    if not outbound_parent:
+        outbound_parent = await Menu.create(
+            menu_type=MenuType.CATALOG,
+            name="外发管理",
+            path="/outbound",
+            order=5,
+            parent_id=0,
+            icon="material-symbols:outbox-outline",
+            is_hidden=False,
+            component="Layout",
+            keepalive=False,
+            redirect="/outbound/webdav",
+        )
+    else:
+        outbound_parent.menu_type = MenuType.CATALOG
+        outbound_parent.name = "外发管理"
+        outbound_parent.order = 5
+        outbound_parent.parent_id = 0
+        outbound_parent.icon = "material-symbols:outbox-outline"
+        outbound_parent.is_hidden = False
+        outbound_parent.component = "Layout"
+        outbound_parent.keepalive = False
+        outbound_parent.redirect = "/outbound/webdav"
+        await outbound_parent.save()
+
+    webdav_menu = await Menu.filter(
+        Q(component="/system/webdav") | Q(path="webdav", parent_id=outbound_parent.id) | Q(name="外发网盘")
+    ).first()
+    if webdav_menu:
+        webdav_menu.name = "外发网盘"
+        webdav_menu.path = "webdav"
+        webdav_menu.order = 1
+        webdav_menu.parent_id = outbound_parent.id
+        webdav_menu.icon = "material-symbols:cloud-sync-outline"
+        webdav_menu.is_hidden = False
+        webdav_menu.keepalive = False
+        webdav_menu.redirect = ""
+        await webdav_menu.save()
+    else:
+        await Menu.create(
+            menu_type=MenuType.MENU,
+            name="外发网盘",
+            path="webdav",
+            order=1,
+            parent_id=outbound_parent.id,
+            icon="material-symbols:cloud-sync-outline",
+            is_hidden=False,
+            component="/system/webdav",
+            keepalive=False,
+            redirect="",
+        )
+
+    share_menu = await Menu.filter(
+        Q(component="/system/webdav-share") | Q(path="webdav-share", parent_id=outbound_parent.id) | Q(name="分享记录")
+    ).first()
+    if share_menu:
+        share_menu.name = "分享记录"
+        share_menu.path = "webdav-share"
+        share_menu.order = 2
+        share_menu.parent_id = outbound_parent.id
+        share_menu.icon = "material-symbols:link-rounded"
+        share_menu.is_hidden = False
+        share_menu.keepalive = False
+        share_menu.redirect = ""
+        await share_menu.save()
+    else:
+        await Menu.create(
+            menu_type=MenuType.MENU,
+            name="分享记录",
+            path="webdav-share",
+            order=2,
+            parent_id=outbound_parent.id,
+            icon="material-symbols:link-rounded",
+            is_hidden=False,
+            component="/system/webdav-share",
+            keepalive=False,
+            redirect="",
+        )
+
 
 async def init_apis():
     await api_controller.refresh_api()
@@ -366,6 +446,14 @@ async def init_roles():
         path__in=["/api/v1/partner/register/list", "/api/v1/partner/register/review"]
     )
     settings_apis = await Api.filter(path__in=["/api/v1/settings/get", "/api/v1/settings/update"])
+    webdav_apis = await Api.filter(
+        path__in=[
+            "/api/v1/webdav/list",
+            "/api/v1/webdav/share/create",
+            "/api/v1/webdav/share/list",
+            "/api/v1/webdav/share/delete",
+        ]
+    )
     basic_apis = await Api.filter(
         Q(method__in=["GET"]) | Q(tags="基础模块") | Q(path__in=["/api/v1/base/update_password"])
     )
@@ -375,6 +463,9 @@ async def init_roles():
     review_menus = await Menu.filter(Q(path="/ticket") | Q(component="/ticket/review"))
     partner_review_menus = await Menu.filter(Q(path="/partner") | Q(component="/partner/review"))
     settings_menus = await Menu.filter(Q(component="/system/settings"))
+    webdav_menus = await Menu.filter(
+        Q(path="/outbound") | Q(component="/system/webdav") | Q(component="/system/webdav-share")
+    )
 
     for role_name in ["用户", "渠道商", "技术", "客服"]:
         role_obj = role_map[role_name]
@@ -399,7 +490,9 @@ async def init_roles():
     await role_map["客服"].menus.add(*partner_review_menus)
 
     await role_map["管理员"].apis.add(*settings_apis)
+    await role_map["管理员"].apis.add(*webdav_apis)
     await role_map["管理员"].menus.add(*settings_menus)
+    await role_map["管理员"].menus.add(*webdav_menus)
 
 
 async def init_data():

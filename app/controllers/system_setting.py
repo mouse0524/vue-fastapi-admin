@@ -1,7 +1,9 @@
 import os
 import uuid
 from datetime import datetime
+from urllib.parse import quote
 
+import httpx
 from fastapi import HTTPException, UploadFile
 
 from app.log import logger
@@ -10,6 +12,19 @@ from app.settings import settings
 
 
 class SystemSettingController:
+    @staticmethod
+    def _mask_secret(value: str | None) -> str:
+        if not value:
+            return ""
+        return "******"
+
+    async def get_safe_dict(self) -> dict:
+        setting = await self.get_or_create()
+        data = await setting.to_dict()
+        data["smtp_password"] = self._mask_secret(data.get("smtp_password"))
+        data["webdav_password"] = self._mask_secret(data.get("webdav_password"))
+        return data
+
     async def get_or_create(self) -> SystemSetting:
         setting = await SystemSetting.first()
         if not setting:
@@ -28,9 +43,69 @@ class SystemSettingController:
             "ticket_categories": data.get("ticket_categories") or [],
         }
 
+    async def test_webdav_connection(self, payload: dict | None = None) -> dict:
+        setting = await self.get_or_create()
+        db_data = await setting.to_dict()
+        req_data = payload or {}
+
+        enabled = req_data.get("webdav_enabled", db_data.get("webdav_enabled"))
+        base_url = (req_data.get("webdav_base_url") if req_data.get("webdav_base_url") is not None else db_data.get("webdav_base_url"))
+        username = (req_data.get("webdav_username") if req_data.get("webdav_username") is not None else db_data.get("webdav_username"))
+        pwd_input = req_data.get("webdav_password")
+        if pwd_input == "******":
+            password = db_data.get("webdav_password")
+        elif pwd_input is None:
+            password = db_data.get("webdav_password")
+        else:
+            password = pwd_input
+
+        if not enabled:
+            raise HTTPException(status_code=400, detail="WebDAV未启用，请先开启")
+        if not base_url:
+            raise HTTPException(status_code=400, detail="WebDAV Base URL 未配置")
+        if not username or not password:
+            raise HTTPException(status_code=400, detail="WebDAV账号或密码未配置")
+
+        test_url = base_url.rstrip("/") + quote("/", safe="/")
+        body = """<?xml version=\"1.0\" encoding=\"utf-8\" ?><d:propfind xmlns:d=\"DAV:\"><d:allprop/></d:propfind>"""
+
+        logger.info("[settings.webdav.test] start base_url={} username={}", base_url, username)
+        try:
+            async with httpx.AsyncClient(timeout=20.0) as client:
+                response = await client.request(
+                    "PROPFIND",
+                    test_url,
+                    content=body,
+                    headers={"Depth": "0", "Content-Type": "application/xml"},
+                    auth=(username, password),
+                )
+        except Exception as exc:
+            logger.exception("[settings.webdav.test] network_error base_url={} username={}", base_url, username)
+            raise HTTPException(status_code=400, detail=f"连接失败：{exc}")
+
+        if response.status_code not in {200, 207}:
+            logger.warning(
+                "[settings.webdav.test] failed status={} base_url={} username={}",
+                response.status_code,
+                base_url,
+                username,
+            )
+            raise HTTPException(status_code=400, detail=f"连接失败，HTTP状态码：{response.status_code}")
+
+        logger.info("[settings.webdav.test] success base_url={} username={}", base_url, username)
+        return {
+            "ok": True,
+            "status_code": response.status_code,
+            "message": "WebDAV连接成功",
+        }
+
     async def update(self, payload: dict) -> SystemSetting:
         logger.info("[settings.update] start keys={}", sorted(list(payload.keys())))
         setting = await self.get_or_create()
+        if payload.get("smtp_password") == "******":
+            payload.pop("smtp_password", None)
+        if payload.get("webdav_password") == "******":
+            payload.pop("webdav_password", None)
         setting.update_from_dict(payload)
         await setting.save()
         logger.info("[settings.update] success setting_id={}", setting.id)

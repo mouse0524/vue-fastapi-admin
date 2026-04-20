@@ -28,9 +28,23 @@ class SystemSettingUpdateIn(BaseModel):
     register_review_reject_is_html: bool = True
     register_review_reject_template: str = "您好，{contact_name}，您的{register_type}注册申请已驳回。驳回理由：{reason}"
 
+    webdav_enabled: bool = False
+    webdav_base_url: str | None = None
+    webdav_username: str | None = None
+    webdav_password: str | None = None
+    webdav_share_default_expire_hours: int = 168
+    webdav_signature_secret: str | None = None
+
 
 class PublicSiteConfigOut(BaseModel):
     site_title: str
     site_logo: str | None = None
     allow_partner_register: bool
     ticket_categories: list[str]
+
+
+class WebDavTestIn(BaseModel):
+    webdav_enabled: bool = True
+    webdav_base_url: str | None = None
+    webdav_username: str | None = None
+    webdav_password: str | None = None
