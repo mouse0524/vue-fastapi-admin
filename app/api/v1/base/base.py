@@ -1,11 +1,18 @@
 from datetime import datetime, timedelta, timezone
 
 from fastapi import APIRouter
+from fastapi.responses import FileResponse
 
 from app.controllers.user import user_controller
+from app.controllers.captcha import captcha_controller
+from app.controllers.mail import mail_controller
+from app.controllers.system_setting import system_setting_controller
 from app.core.ctx import CTX_USER_ID
 from app.core.dependency import DependAuth
-from app.models.admin import Api, Menu, Role, User
+from app.models.admin import Api, AuditLog, Menu, PartnerRegistration, Role, Ticket, User
+from app.models.enums import PartnerRegisterStatus, TicketStatus
+from app.schemas.captcha import CaptchaOut
+from app.schemas.mail import SendVerifyCodeIn
 from app.schemas.base import Fail, Success
 from app.schemas.login import *
 from app.schemas.users import UpdatePassword
@@ -18,6 +25,10 @@ router = APIRouter()
 
 @router.post("/access_token", summary="获取token")
 async def login_access_token(credentials: CredentialsSchema):
+    valid = await captcha_controller.verify_captcha(credentials.captcha_id, credentials.captcha_code)
+    if not valid:
+        return Fail(code=400, msg=f"登录验证码错误或已过期（最多{settings.CAPTCHA_MAX_RETRY}次）")
+
     user: User = await user_controller.authenticate(credentials)
     await user_controller.update_last_login(user.id)
     access_token_expires = timedelta(minutes=settings.JWT_ACCESS_TOKEN_EXPIRE_MINUTES)
@@ -35,6 +46,79 @@ async def login_access_token(credentials: CredentialsSchema):
         username=user.username,
     )
     return Success(data=data.model_dump())
+
+
+@router.get("/captcha", summary="获取图形验证码")
+async def get_captcha():
+    captcha_id, image_base64 = await captcha_controller.create_captcha()
+    data = CaptchaOut(captcha_id=captcha_id, image_base64=image_base64)
+    return Success(data=data.model_dump())
+
+
+@router.get("/public_config", summary="获取公共站点配置")
+async def get_public_config():
+    data = await system_setting_controller.get_public_config()
+    return Success(data=data)
+
+
+@router.get("/site_logo", summary="获取站点Logo")
+async def get_site_logo():
+    abs_path = await system_setting_controller.get_logo_abs_path()
+    return FileResponse(abs_path)
+
+
+@router.post("/send_email_code", summary="发送邮箱验证码")
+async def send_email_code(payload: SendVerifyCodeIn):
+    config = await system_setting_controller.get_public_config()
+    if not config.get("allow_partner_register", True):
+        return Fail(code=403, msg="当前未开放注册")
+
+    email = payload.email.strip().lower()
+    if await User.filter(email=email).exists():
+        return Fail(code=400, msg="邮箱已被注册")
+
+    if await PartnerRegistration.filter(status=PartnerRegisterStatus.PENDING, email=email).exists():
+        return Fail(code=400, msg="该邮箱已有待审核申请")
+
+    valid = await captcha_controller.verify_captcha(payload.captcha_id, payload.captcha_code)
+    if not valid:
+        return Fail(code=400, msg=f"验证码错误或已过期（最多{settings.CAPTCHA_MAX_RETRY}次）")
+
+    await mail_controller.send_partner_verify_code(email)
+    return Success(msg="验证码已发送，请查收邮箱")
+
+
+@router.get("/workbench_stats", summary="工作台统计", dependencies=[DependAuth])
+async def get_workbench_stats():
+    now = datetime.now()
+    today_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
+    tomorrow_start = today_start + timedelta(days=1)
+
+    ticket_total = await Ticket.all().count()
+    ticket_pending_review = await Ticket.filter(status=TicketStatus.PENDING_REVIEW).count()
+    ticket_tech_processing = await Ticket.filter(status=TicketStatus.TECH_PROCESSING).count()
+    ticket_today_created = await Ticket.filter(created_at__gte=today_start, created_at__lt=tomorrow_start).count()
+    ticket_today_done = await Ticket.filter(
+        status=TicketStatus.DONE,
+        finished_at__gte=today_start,
+        finished_at__lt=tomorrow_start,
+    ).count()
+    register_pending = await PartnerRegistration.filter(status=PartnerRegisterStatus.PENDING).count()
+    user_total = await User.all().count()
+    auditlog_today = await AuditLog.filter(created_at__gte=today_start, created_at__lt=tomorrow_start).count()
+
+    return Success(
+        data={
+            "ticket_total": ticket_total,
+            "ticket_pending_review": ticket_pending_review,
+            "ticket_tech_processing": ticket_tech_processing,
+            "ticket_today_created": ticket_today_created,
+            "ticket_today_done": ticket_today_done,
+            "register_pending": register_pending,
+            "user_total": user_total,
+            "auditlog_today": auditlog_today,
+        }
+    )
 
 
 @router.get("/userinfo", summary="查看用户信息", dependencies=[DependAuth])

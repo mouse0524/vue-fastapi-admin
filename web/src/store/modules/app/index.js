@@ -17,6 +17,10 @@ export const useAppStore = defineStore('app', {
       aliveKeys: {},
       isDark,
       locale: currentLocale || 'en',
+      siteTitle: import.meta.env.VITE_TITLE || 'Vue FastAPI Admin',
+      siteLogo: '',
+      allowPartnerRegister: true,
+      ticketCategories: ['登录问题', '权限问题', '系统异常', '其他'],
     }
   },
   actions: {
@@ -55,6 +59,15 @@ export const useAppStore = defineStore('app', {
       this.locale = newLocale
       locale.value = newLocale
       lStorage.set('locale', newLocale)
+    },
+    setSiteConfig(config = {}) {
+      this.siteTitle = config.site_title || this.siteTitle
+      this.siteLogo = config.site_logo || ''
+      this.allowPartnerRegister =
+        typeof config.allow_partner_register === 'boolean' ? config.allow_partner_register : this.allowPartnerRegister
+      if (Array.isArray(config.ticket_categories) && config.ticket_categories.length > 0) {
+        this.ticketCategories = config.ticket_categories
+      }
     },
   },
 })

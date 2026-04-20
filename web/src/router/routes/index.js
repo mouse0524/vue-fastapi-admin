@@ -51,6 +51,7 @@ export const basicRoutes = [
     path: '/error-page',
     component: Layout,
     redirect: '/error-page/404',
+    isHidden: true,
     meta: {
       title: t('views.errors.label_error'),
       icon: 'mdi:alert-circle-outline',
@@ -114,6 +115,15 @@ export const basicRoutes = [
     isHidden: true,
     meta: {
       title: '登录页',
+    },
+  },
+  {
+    name: 'PublicTicketSubmit',
+    path: '/ticket/public-submit',
+    component: () => import('@/views/ticket/submit/index.vue'),
+    isHidden: true,
+    meta: {
+      title: '游客工单提交',
     },
   },
 ]

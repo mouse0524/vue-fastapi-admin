@@ -6,6 +6,7 @@ import '@/styles/global.scss'
 import { createApp } from 'vue'
 import { setupRouter } from '@/router'
 import { setupStore } from '@/store'
+import { useAppStore } from '@/store'
 import App from './App.vue'
 import { setupDirectives } from './directives'
 import { useResize } from '@/utils'
@@ -15,6 +16,18 @@ async function setupApp() {
   const app = createApp(App)
 
   setupStore(app)
+  const appStore = useAppStore()
+
+  try {
+    const baseApi = import.meta.env.VITE_BASE_API || '/api/v1'
+    const res = await fetch(`${baseApi}/base/public_config`)
+    const json = await res.json()
+    if (json?.code === 200 && json?.data) {
+      appStore.setSiteConfig(json.data)
+    }
+  } catch (error) {
+    console.error('load public config failed', error)
+  }
 
   await setupRouter(app)
   setupDirectives(app)

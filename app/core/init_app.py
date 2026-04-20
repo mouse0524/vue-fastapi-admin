@@ -1,4 +1,6 @@
 import shutil
+import glob
+import os
 
 from aerich import Command
 from fastapi import FastAPI
@@ -160,6 +162,17 @@ async def init_menus():
                 component="/system/auditlog",
                 keepalive=False,
             ),
+            Menu(
+                menu_type=MenuType.MENU,
+                name="系统设置",
+                path="settings",
+                order=7,
+                parent_id=parent_menu.id,
+                icon="material-symbols:settings-outline",
+                is_hidden=False,
+                component="/system/settings",
+                keepalive=False,
+            ),
         ]
         await Menu.bulk_create(children_menu)
         await Menu.create(
@@ -175,11 +188,111 @@ async def init_menus():
             redirect="",
         )
 
+    ticket_parent = await Menu.filter(path="/ticket").first()
+    if not ticket_parent:
+        ticket_parent = await Menu.create(
+            menu_type=MenuType.CATALOG,
+            name="工单中心",
+            path="/ticket",
+            order=3,
+            parent_id=0,
+            icon="tabler:ticket",
+            is_hidden=False,
+            component="Layout",
+            keepalive=False,
+            redirect="/ticket/submit",
+        )
+
+    ticket_children = [
+        {
+            "name": "提交工单",
+            "path": "submit",
+            "order": 1,
+            "icon": "material-symbols:upload-file-outline",
+            "component": "/ticket/submit",
+        },
+        {
+            "name": "我的工单",
+            "path": "my",
+            "order": 2,
+            "icon": "mdi:ticket-account",
+            "component": "/ticket/my",
+        },
+        {
+            "name": "工单审核",
+            "path": "review",
+            "order": 3,
+            "icon": "material-symbols:checklist",
+            "component": "/ticket/review",
+        },
+        {
+            "name": "技术处理",
+            "path": "tech",
+            "order": 4,
+            "icon": "mdi:tools",
+            "component": "/ticket/tech",
+        },
+    ]
+    for child in ticket_children:
+        exists = await Menu.filter(parent_id=ticket_parent.id, path=child["path"]).exists()
+        if not exists:
+            await Menu.create(
+                menu_type=MenuType.MENU,
+                parent_id=ticket_parent.id,
+                is_hidden=False,
+                keepalive=False,
+                redirect="",
+                **child,
+            )
+
+    partner_parent = await Menu.filter(path="/partner").first()
+    if not partner_parent:
+        partner_parent = await Menu.create(
+            menu_type=MenuType.CATALOG,
+            name="代理商中心",
+            path="/partner",
+            order=4,
+            parent_id=0,
+            icon="mdi:account-group-outline",
+            is_hidden=False,
+            component="Layout",
+            keepalive=False,
+            redirect="/partner/review",
+        )
+
+    if not await Menu.filter(parent_id=partner_parent.id, path="review").exists():
+        await Menu.create(
+            menu_type=MenuType.MENU,
+            name="注册审核",
+            path="review",
+            order=1,
+            parent_id=partner_parent.id,
+            icon="mdi:file-document-edit-outline",
+            is_hidden=False,
+            component="/partner/review",
+            keepalive=False,
+            redirect="",
+        )
+
+    if not await Menu.filter(component="/system/settings").exists():
+        system_parent = await Menu.filter(path="/system").first()
+        if system_parent:
+            await Menu.create(
+                menu_type=MenuType.MENU,
+                name="系统设置",
+                path="settings",
+                order=7,
+                parent_id=system_parent.id,
+                icon="material-symbols:settings-outline",
+                is_hidden=False,
+                component="/system/settings",
+                keepalive=False,
+                redirect="",
+            )
+
 
 async def init_apis():
-    apis = await api_controller.model.exists()
-    if not apis:
-        await api_controller.refresh_api()
+    await api_controller.refresh_api()
 
 
 async def init_db():
@@ -190,39 +303,103 @@ async def init_db():
         pass
 
     await command.init()
+
+    migration_files = glob.glob(os.path.join("migrations", "models", "3_*.py"))
+    if len(migration_files) > 1:
+        migration_files.sort(key=os.path.getmtime, reverse=True)
+        keep = migration_files[0]
+        for file in migration_files[1:]:
+            try:
+                os.remove(file)
+                logger.warning(f"removed duplicated migration file: {file}, keep: {keep}")
+            except OSError:
+                pass
+
     try:
-        await command.migrate()
+        await command.upgrade(run_in_transaction=True)
     except AttributeError:
         logger.warning("unable to retrieve model history from database, model history will be created from scratch")
         shutil.rmtree("migrations")
         await command.init_db(safe=True)
 
-    await command.upgrade(run_in_transaction=True)
-
 
 async def init_roles():
-    roles = await Role.exists()
-    if not roles:
-        admin_role = await Role.create(
-            name="管理员",
-            desc="管理员角色",
-        )
-        user_role = await Role.create(
-            name="普通用户",
-            desc="普通用户角色",
-        )
+    old_partner_role = await Role.filter(name="代理商").first()
+    if old_partner_role:
+        old_partner_role.name = "渠道商"
+        old_partner_role.desc = "渠道商角色"
+        await old_partner_role.save()
 
-        # 分配所有API给管理员角色
-        all_apis = await Api.all()
-        await admin_role.apis.add(*all_apis)
-        # 分配所有菜单给管理员和普通用户
-        all_menus = await Menu.all()
-        await admin_role.menus.add(*all_menus)
-        await user_role.menus.add(*all_menus)
+    role_desc_map = {
+        "管理员": "管理员角色",
+        "渠道商": "渠道商角色",
+        "用户": "用户角色",
+        "技术": "技术角色",
+        "客服": "客服角色",
+    }
 
-        # 为普通用户分配基本API
-        basic_apis = await Api.filter(Q(method__in=["GET"]) | Q(tags="基础模块"))
-        await user_role.apis.add(*basic_apis)
+    role_map: dict[str, Role] = {}
+    for role_name, role_desc in role_desc_map.items():
+        role_obj, _ = await Role.get_or_create(name=role_name, defaults={"desc": role_desc})
+        role_map[role_name] = role_obj
+
+    all_apis = await Api.all()
+    all_menus = await Menu.all()
+
+    admin_role = role_map["管理员"]
+    await admin_role.apis.add(*all_apis)
+    await admin_role.menus.add(*all_menus)
+
+    ticket_submit_apis = await Api.filter(
+        path__in=[
+            "/api/v1/ticket/upload",
+            "/api/v1/ticket/create",
+            "/api/v1/ticket/list",
+            "/api/v1/ticket/get",
+            "/api/v1/ticket/resubmit",
+            "/api/v1/ticket/actions",
+        ]
+    )
+    ticket_tech_apis = await Api.filter(path__in=["/api/v1/ticket/tech/action"])
+    ticket_review_apis = await Api.filter(path__in=["/api/v1/ticket/review"])
+    partner_review_apis = await Api.filter(
+        path__in=["/api/v1/partner/register/list", "/api/v1/partner/register/review"]
+    )
+    settings_apis = await Api.filter(path__in=["/api/v1/settings/get", "/api/v1/settings/update"])
+    basic_apis = await Api.filter(
+        Q(method__in=["GET"]) | Q(tags="基础模块") | Q(path__in=["/api/v1/base/update_password"])
+    )
+
+    submit_menus = await Menu.filter(Q(path="/ticket") | Q(component="/ticket/submit") | Q(component="/ticket/my"))
+    tech_menus = await Menu.filter(Q(path="/ticket") | Q(component="/ticket/tech") | Q(component="/ticket/my"))
+    review_menus = await Menu.filter(Q(path="/ticket") | Q(component="/ticket/review"))
+    partner_review_menus = await Menu.filter(Q(path="/partner") | Q(component="/partner/review"))
+    settings_menus = await Menu.filter(Q(component="/system/settings"))
+
+    for role_name in ["用户", "渠道商", "技术", "客服"]:
+        role_obj = role_map[role_name]
+        await role_obj.apis.add(*basic_apis)
+
+    await role_map["用户"].apis.add(*ticket_submit_apis)
+    await role_map["用户"].menus.add(*submit_menus)
+
+    await role_map["渠道商"].apis.add(*ticket_submit_apis)
+    await role_map["渠道商"].menus.add(*submit_menus)
+
+    await role_map["技术"].apis.add(*ticket_submit_apis)
+    await role_map["技术"].apis.add(*ticket_tech_apis)
+    await role_map["技术"].menus.add(*tech_menus)
+
+    await role_map["客服"].apis.add(*ticket_review_apis)
+    await role_map["客服"].apis.add(*partner_review_apis)
+    await role_map["客服"].apis.add(
+        *await Api.filter(path__in=["/api/v1/ticket/list", "/api/v1/ticket/get", "/api/v1/ticket/actions"])
+    )
+    await role_map["客服"].menus.add(*review_menus)
+    await role_map["客服"].menus.add(*partner_review_menus)
+
+    await role_map["管理员"].apis.add(*settings_apis)
+    await role_map["管理员"].menus.add(*settings_menus)
 
 
 async def init_data():

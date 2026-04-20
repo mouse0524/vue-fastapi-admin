@@ -1,0 +1,145 @@
+import base64
+import io
+import random
+import string
+import time
+import unicodedata
+import uuid
+
+from PIL import Image, ImageDraw, ImageFont
+
+from app.core.redis_client import execute_redis
+from app.settings import settings
+
+
+_LOCAL_CAPTCHA_CACHE: dict[str, dict] = {}
+
+
+class CaptchaController:
+    @staticmethod
+    def _generate_code(length: int = 4) -> str:
+        chars = "23456789"
+        return "".join(random.choice(chars) for _ in range(length))
+
+    @staticmethod
+    def _normalize_code(code: str) -> str:
+        if code is None:
+            return ""
+        normalized = unicodedata.normalize("NFKC", code)
+        return normalized.strip().replace(" ", "").lower()
+
+    @staticmethod
+    def _cleanup_local_cache() -> None:
+        now = time.time()
+        expired_ids = [k for k, v in _LOCAL_CAPTCHA_CACHE.items() if v.get("expires_at", 0) <= now]
+        for captcha_id in expired_ids:
+            _LOCAL_CAPTCHA_CACHE.pop(captcha_id, None)
+
+    @staticmethod
+    def _set_local_cache(captcha_id: str, code: str) -> None:
+        CaptchaController._cleanup_local_cache()
+        _LOCAL_CAPTCHA_CACHE[captcha_id] = {
+            "code": code,
+            "retry": 0,
+            "expires_at": time.time() + settings.CAPTCHA_TTL_SECONDS,
+        }
+
+    @staticmethod
+    def _verify_local_cache(captcha_id: str, captcha_code: str) -> bool:
+        CaptchaController._cleanup_local_cache()
+        item = _LOCAL_CAPTCHA_CACHE.get(captcha_id)
+        if not item:
+            return False
+
+        if item["retry"] >= settings.CAPTCHA_MAX_RETRY:
+            _LOCAL_CAPTCHA_CACHE.pop(captcha_id, None)
+            return False
+
+        is_valid = item["code"] == captcha_code
+        if is_valid:
+            _LOCAL_CAPTCHA_CACHE.pop(captcha_id, None)
+            return True
+
+        item["retry"] += 1
+        if item["retry"] >= settings.CAPTCHA_MAX_RETRY:
+            _LOCAL_CAPTCHA_CACHE.pop(captcha_id, None)
+        return False
+
+    @staticmethod
+    def _generate_image_base64(code: str) -> str:
+        width, height = 120, 40
+        image = Image.new("RGB", (width, height), color=(255, 255, 255))
+        draw = ImageDraw.Draw(image)
+        try:
+            font = ImageFont.truetype("arial.ttf", 24)
+        except OSError:
+            font = ImageFont.load_default()
+
+        for i, ch in enumerate(code):
+            draw.text((10 + i * 25, 8), ch, fill=(20, 20, 20), font=font)
+
+        for _ in range(6):
+            x1 = random.randint(0, width)
+            y1 = random.randint(0, height)
+            x2 = random.randint(0, width)
+            y2 = random.randint(0, height)
+            draw.line((x1, y1, x2, y2), fill=(160, 160, 160), width=1)
+
+        for _ in range(30):
+            draw.point((random.randint(0, width - 1), random.randint(0, height - 1)), fill=(190, 190, 190))
+
+        buf = io.BytesIO()
+        image.save(buf, format="PNG")
+        return base64.b64encode(buf.getvalue()).decode("ascii")
+
+    async def create_captcha(self) -> tuple[str, str]:
+        captcha_id = uuid.uuid4().hex
+        code = self._generate_code()
+        normalized_code = self._normalize_code(code)
+        self._set_local_cache(captcha_id, normalized_code)
+        try:
+            await execute_redis("setex", f"captcha:{captcha_id}", settings.CAPTCHA_TTL_SECONDS, normalized_code)
+            await execute_redis("setex", f"captcha_retry:{captcha_id}", settings.CAPTCHA_TTL_SECONDS, 0)
+        except Exception:
+            pass
+        return captcha_id, self._generate_image_base64(code)
+
+    async def verify_captcha(self, captcha_id: str, captcha_code: str) -> bool:
+        captcha_key = f"captcha:{captcha_id}"
+        retry_key = f"captcha_retry:{captcha_id}"
+        input_code = self._normalize_code(captcha_code)
+
+        try:
+            saved = await execute_redis("get", captcha_key)
+            if not saved:
+                return self._verify_local_cache(captcha_id, input_code)
+
+            retry_count_raw = await execute_redis("get", retry_key)
+            retry_count = int(retry_count_raw) if retry_count_raw else 0
+            if retry_count >= settings.CAPTCHA_MAX_RETRY:
+                await execute_redis("delete", captcha_key)
+                await execute_redis("delete", retry_key)
+                return False
+
+            saved_code = self._normalize_code(saved)
+            is_valid = saved_code == input_code
+            if is_valid:
+                await execute_redis("delete", captcha_key)
+                await execute_redis("delete", retry_key)
+                _LOCAL_CAPTCHA_CACHE.pop(captcha_id, None)
+                return True
+
+            retry_count += 1
+            if retry_count >= settings.CAPTCHA_MAX_RETRY:
+                await execute_redis("delete", captcha_key)
+                await execute_redis("delete", retry_key)
+            else:
+                ttl = await execute_redis("ttl", captcha_key)
+                ttl = ttl if ttl and ttl > 0 else settings.CAPTCHA_TTL_SECONDS
+                await execute_redis("setex", retry_key, ttl, retry_count)
+            return False
+        except Exception:
+            return self._verify_local_cache(captcha_id, input_code)
+
+
+captcha_controller = CaptchaController()

@@ -23,6 +23,28 @@ class Settings(BaseSettings):
     SECRET_KEY: str = "3488a63e1765035d386f05409663f55c83bfae3b3c61a932744b20ad14244dcf"  # openssl rand -hex 32
     JWT_ALGORITHM: str = "HS256"
     JWT_ACCESS_TOKEN_EXPIRE_MINUTES: int = 60 * 24 * 7  # 7 day
+    REDIS_HOST: str = "127.0.0.1"
+    REDIS_PORT: int = 6379
+    REDIS_DB: int = 0
+    REDIS_PASSWORD: str | None = None
+    CAPTCHA_TTL_SECONDS: int = 120
+    CAPTCHA_MAX_RETRY: int = 3
+    EMAIL_VERIFY_TTL_SECONDS: int = 600
+    UPLOAD_DIR: str = os.path.join(BASE_DIR, "storage")
+    MAX_UPLOAD_SIZE: int = 20 * 1024 * 1024
+    ALLOWED_EXTENSIONS: typing.List[str] = [
+        ".jpg",
+        ".jpeg",
+        ".png",
+        ".pdf",
+        ".doc",
+        ".docx",
+        ".xls",
+        ".xlsx",
+        ".txt",
+        ".zip",
+        ".rar",
+    ]
     TORTOISE_ORM: dict = {
         "connections": {
             # SQLite configuration

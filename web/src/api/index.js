@@ -2,6 +2,10 @@ import { request } from '@/utils'
 
 export default {
   login: (data) => request.post('/base/access_token', data, { noNeedToken: true }),
+  getCaptcha: () => request.get('/base/captcha', { noNeedToken: true }),
+  getPublicConfig: () => request.get('/base/public_config', { noNeedToken: true }),
+  getWorkbenchStats: () => request.get('/base/workbench_stats'),
+  sendEmailCode: (data = {}) => request.post('/base/send_email_code', data, { noNeedToken: true }),
   getUserInfo: () => request.get('/base/userinfo'),
   getUserMenu: () => request.get('/base/usermenu'),
   getUserApi: () => request.get('/base/userapi'),
@@ -39,4 +43,46 @@ export default {
   deleteDept: (params = {}) => request.delete('/dept/delete', { params }),
   // auditlog
   getAuditLogList: (params = {}) => request.get('/auditlog/list', { params }),
+  // ticket
+  uploadTicketAttachment: (file) => {
+    const formData = new FormData()
+    formData.append('file', file)
+    return request.post('/ticket/upload', formData, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+    })
+  },
+  createTicket: (data = {}) => request.post('/ticket/create', data),
+  getTicketPrefill: () => request.get('/ticket/prefill'),
+  getTicketList: (params = {}) => request.get('/ticket/list', { params }),
+  getTicketById: (params = {}) => request.get('/ticket/get', { params }),
+  reviewTicket: (data = {}) => request.post('/ticket/review', data),
+  techActionTicket: (data = {}) => request.post('/ticket/tech/action', data),
+  resubmitTicket: (data = {}) => request.post('/ticket/resubmit', data),
+  getTicketActions: (params = {}) => request.get('/ticket/actions', { params }),
+  uploadPublicTicketAttachment: (file) => {
+    const formData = new FormData()
+    formData.append('file', file)
+    return request.post('/public/ticket/upload', formData, {
+      noNeedToken: true,
+      headers: { 'Content-Type': 'multipart/form-data' },
+    })
+  },
+  createPublicTicket: (data = {}) => request.post('/public/ticket/create', data, { noNeedToken: true }),
+  // partner
+  channelRegister: (data = {}) =>
+    request.post('/partner/register', { ...data, register_type: 'channel' }, { noNeedToken: true }),
+  userRegister: (data = {}) =>
+    request.post('/partner/register', { ...data, register_type: 'user' }, { noNeedToken: true }),
+  getPartnerRegisterList: (params = {}) => request.get('/partner/register/list', { params }),
+  reviewPartnerRegister: (data = {}) => request.post('/partner/register/review', data),
+  // settings
+  getSystemSettings: () => request.get('/settings/get'),
+  updateSystemSettings: (data = {}) => request.post('/settings/update', data),
+  uploadSiteLogo: (file) => {
+    const formData = new FormData()
+    formData.append('file', file)
+    return request.post('/settings/upload_logo', formData, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+    })
+  },
 }

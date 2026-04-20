@@ -1,6 +1,7 @@
 <template>
   <router-link h-60 f-c-c to="/">
-    <icon-custom-logo text-36 color-primary></icon-custom-logo>
+    <img v-if="appStore.siteLogo" :src="appStore.siteLogo" alt="logo" style="height: 36px; width: 36px" />
+    <icon-custom-logo v-else text-36 color-primary></icon-custom-logo>
     <h2
       v-show="!appStore.collapsed"
       ml-2
@@ -11,7 +12,7 @@
       font-bold
       color-primary
     >
-      {{ title }}
+      {{ appStore.siteTitle || title }}
     </h2>
   </router-link>
 </template>
