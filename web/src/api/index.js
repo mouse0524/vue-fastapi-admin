@@ -73,7 +73,19 @@ export default {
     request.post('/partner/register', { ...data, register_type: 'channel' }, { noNeedToken: true }),
   userRegister: (data = {}) =>
     request.post('/partner/register', { ...data, register_type: 'user' }, { noNeedToken: true }),
-  getPartnerRegisterList: (params = {}) => request.get('/partner/register/list', { params }),
+  getPartnerRegisterList: (params = {}) => {
+    const query = { ...params }
+    if (query.register_type === 'all' || query.register_type === '' || query.register_type == null) {
+      delete query.register_type
+    } else {
+      query.register_type = String(query.register_type)
+    }
+    if (query.reviewed == null || query.reviewed === '') {
+      delete query.reviewed
+    }
+    if (!query.keyword) delete query.keyword
+    return request.get('/partner/register/list', { params: query })
+  },
   reviewPartnerRegister: (data = {}) => request.post('/partner/register/review', data),
   // settings
   getSystemSettings: () => request.get('/settings/get'),

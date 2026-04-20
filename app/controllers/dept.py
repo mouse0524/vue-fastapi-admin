@@ -2,6 +2,7 @@ from tortoise.expressions import Q
 from tortoise.transactions import atomic
 
 from app.core.crud import CRUDBase
+from app.log import logger
 from app.models.admin import Dept, DeptClosure
 from app.schemas.depts import DeptCreate, DeptUpdate
 
@@ -55,14 +56,32 @@ class DeptController(CRUDBase[Dept, DeptCreate, DeptUpdate]):
 
     @atomic()
     async def create_dept(self, obj_in: DeptCreate):
+        logger.info(
+            "[dept.create] start name={} parent_id={} order={}",
+            obj_in.name,
+            obj_in.parent_id,
+            obj_in.order,
+        )
         # 创建
         if obj_in.parent_id != 0:
             await self.get(id=obj_in.parent_id)
         new_obj = await self.create(obj_in=obj_in)
         await self.update_dept_closure(new_obj)
+        logger.info(
+            "[dept.create] success dept_id={} name={} parent_id={}",
+            new_obj.id,
+            new_obj.name,
+            new_obj.parent_id,
+        )
 
     @atomic()
     async def update_dept(self, obj_in: DeptUpdate):
+        logger.info(
+            "[dept.update] start dept_id={} name={} parent_id={}",
+            obj_in.id,
+            obj_in.name,
+            obj_in.parent_id,
+        )
         dept_obj = await self.get(id=obj_in.id)
         # 更新部门关系
         if dept_obj.parent_id != obj_in.parent_id:
@@ -72,6 +91,12 @@ class DeptController(CRUDBase[Dept, DeptCreate, DeptUpdate]):
         # 更新部门信息
         dept_obj.update_from_dict(obj_in.model_dump(exclude_unset=True))
         await dept_obj.save()
+        logger.info(
+            "[dept.update] success dept_id={} name={} parent_id={}",
+            dept_obj.id,
+            dept_obj.name,
+            dept_obj.parent_id,
+        )
 
     @atomic()
     async def delete_dept(self, dept_id: int):

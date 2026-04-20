@@ -143,7 +143,7 @@ function submit() {
       } else {
         await api.createPublicTicket(payload)
       }
-      $message.success('工单提交成功')
+      $message.success('工单已提交，我们会尽快处理并反馈进度')
       resetForm()
       await fetchCaptcha()
       if (isAuthed.value) {

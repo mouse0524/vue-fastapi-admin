@@ -59,6 +59,20 @@ const {
 const roleOption = ref([])
 const deptOption = ref([])
 
+const roleTagTypeMap = {
+  管理员: 'error',
+  超级管理员: 'error',
+  客服: 'warning',
+  技术: 'success',
+  用户: 'info',
+  渠道商: 'primary',
+  代理商: 'primary',
+}
+
+function getRoleTagType(roleName) {
+  return roleTagTypeMap[roleName] || 'default'
+}
+
 onMounted(() => {
   $table.value?.handleSearch()
   api.getRoleList({ page: 1, page_size: 9999 }).then((res) => (roleOption.value = res.data))
@@ -72,6 +86,16 @@ const columns = [
     width: 60,
     align: 'center',
     ellipsis: { tooltip: true },
+  },
+  {
+    title: '用户姓名',
+    key: 'alias',
+    width: 70,
+    align: 'center',
+    ellipsis: { tooltip: true },
+    render(row) {
+      return row.alias || '-'
+    },
   },
   {
     title: '邮箱',
@@ -90,7 +114,11 @@ const columns = [
       const group = []
       for (let i = 0; i < roles.length; i++)
         group.push(
-          h(NTag, { type: 'info', style: { margin: '2px 3px' } }, { default: () => roles[i].name })
+          h(
+            NTag,
+            { type: getRoleTagType(roles[i].name), style: { margin: '2px 3px' }, bordered: false },
+            { default: () => roles[i].name }
+          )
         )
       return h('span', group)
     },
@@ -110,7 +138,7 @@ const columns = [
     render(row) {
       return h(
         NTag,
-        { type: 'info', style: { margin: '2px 3px' } },
+        { type: row.is_superuser ? 'success' : 'error', style: { margin: '2px 3px' }, bordered: false },
         { default: () => (row.is_superuser ? '是' : '否') }
       )
     },
@@ -201,7 +229,7 @@ const columns = [
                 ),
                 [[vPermission, 'delete/api/v1/user/delete']]
               ),
-            default: () => h('div', {}, '确定删除该用户吗?'),
+            default: () => h('div', {}, '删除后该账号将无法登录，是否继续删除？'),
           }
         ),
         !row.is_superuser && h(
@@ -210,10 +238,10 @@ const columns = [
             onPositiveClick: async () => {
               try {
                 await api.resetPassword({ user_id: row.id });
-                $message.success('密码已成功重置为123456');
+                $message.success('密码已重置为初始密码，请尽快通知用户修改');
                 await $table.value?.handleSearch();
               } catch (error) {
-                $message.error('重置密码失败: ' + error.message);
+                $message.error('重置失败，请稍后重试：' + error.message);
               }
             },
             onNegativeClick: () => {},
@@ -235,7 +263,7 @@ const columns = [
                 ),
                 [[vPermission, 'post/api/v1/user/reset_password']]
               ),
-            default: () => h('div', {}, '确定重置用户密码为123456吗?'),
+            default: () => h('div', {}, '将重置为初始密码 123456，是否确认执行？'),
           }
         ),
       ]
@@ -248,7 +276,7 @@ async function handleUpdateDisable(row) {
   if (!row.id) return
   const userStore = useUserStore()
   if (userStore.userId === row.id) {
-    $message.error('当前登录用户不可禁用！')
+    $message.error('当前登录账号不可禁用，请先切换其他管理员账号操作')
     return
   }
   row.publishing = true
@@ -396,6 +424,15 @@ const validateAddUser = {
                 @keypress.enter="$table?.handleSearch()"
               />
             </QueryBarItem>
+            <QueryBarItem label="姓名" :label-width="40">
+              <NInput
+                v-model:value="queryItems.alias"
+                clearable
+                type="text"
+                placeholder="请输入用户姓名"
+                @keypress.enter="$table?.handleSearch()"
+              />
+            </QueryBarItem>
             <QueryBarItem label="邮箱" :label-width="40">
               <NInput
                 v-model:value="queryItems.email"
@@ -425,6 +462,9 @@ const validateAddUser = {
           >
             <NFormItem label="用户名称" path="username">
               <NInput v-model:value="modalForm.username" clearable placeholder="请输入用户名称" />
+            </NFormItem>
+            <NFormItem label="用户姓名" path="alias">
+              <NInput v-model:value="modalForm.alias" clearable placeholder="请输入用户姓名" />
             </NFormItem>
             <NFormItem label="邮箱" path="email">
               <NInput v-model:value="modalForm.email" clearable placeholder="请输入邮箱" />

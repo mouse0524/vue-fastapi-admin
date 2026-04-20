@@ -49,14 +49,14 @@ export default function ({ name, initForm = {}, doCreate, doDelete, doUpdate, re
           cb: () => {
             callbacks.forEach((callback) => callback && callback())
           },
-          msg: () => $message.success('新增成功'),
+          msg: () => $message.success('新增操作已完成'),
         },
         edit: {
           api: () => doUpdate(modalForm.value),
           cb: () => {
             callbacks.forEach((callback) => callback && callback())
           },
-          msg: () => $message.success('编辑成功'),
+          msg: () => $message.success('编辑操作已完成'),
         },
       }
       const action = actions[modalAction.value]
@@ -80,7 +80,7 @@ export default function ({ name, initForm = {}, doCreate, doDelete, doUpdate, re
     try {
       modalLoading.value = true
       const data = await doDelete(params)
-      $message.success('删除成功')
+      $message.success('删除操作已完成')
       modalLoading.value = false
       refresh(data)
     } catch (error) {

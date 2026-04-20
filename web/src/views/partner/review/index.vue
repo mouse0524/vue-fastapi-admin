@@ -1,6 +1,6 @@
 <script setup>
 import { h, onMounted, ref } from 'vue'
-import { NButton, NInput, NTag, NModal, NForm, NFormItem } from 'naive-ui'
+import { NButton, NInput, NTag, NModal, NForm, NFormItem, NSelect, NTabs, NTabPane } from 'naive-ui'
 import CommonPage from '@/components/page/CommonPage.vue'
 import QueryBarItem from '@/components/query-bar/QueryBarItem.vue'
 import CrudTable from '@/components/table/CrudTable.vue'
@@ -9,7 +9,8 @@ import api from '@/api'
 defineOptions({ name: '注册审核' })
 
 const $table = ref(null)
-const queryItems = ref({ status: 'pending' })
+const activeTab = ref('pending')
+const queryItems = ref({ reviewed: false, register_type: 'all', keyword: '' })
 const rejectModalVisible = ref(false)
 const rejectSubmitting = ref(false)
 const rejectingRow = ref(null)
@@ -18,9 +19,47 @@ const rejectForm = ref({
   reason: '',
 })
 
+const statusTextMap = {
+  pending: '待审核',
+  approved: '已通过',
+  rejected: '已驳回',
+}
+
+const registerTypeTextMap = {
+  channel: '渠道商',
+  user: '用户',
+}
+
+const registerTypeOptions = [
+  { label: '全部类型', value: 'all' },
+  { label: '渠道商', value: 'channel' },
+  { label: '用户', value: 'user' },
+]
+
+function handleRegisterTypeChange(value) {
+  queryItems.value.register_type = value || 'all'
+  $table.value?.handleSearch()
+}
+
+watch(
+  () => queryItems.value.register_type,
+  (value) => {
+    if (value === undefined || value === null || value === '') {
+      queryItems.value.register_type = 'all'
+    }
+  }
+)
+
 onMounted(() => {
   $table.value?.handleSearch()
 })
+
+function handleTabChange(tab) {
+  activeTab.value = tab
+  queryItems.value.reviewed = tab === 'reviewed'
+  queryItems.value.keyword = ''
+  $table.value?.handleSearch()
+}
 
 async function review(row, approved) {
   await api.reviewPartnerRegister({
@@ -28,7 +67,7 @@ async function review(row, approved) {
     approved,
     comment: approved ? '审核通过' : '审核驳回',
   })
-  $message.success('审核完成')
+  $message.success('审核已完成，通知邮件已发送')
   $table.value?.handleSearch()
 }
 
@@ -48,7 +87,7 @@ function submitReject() {
         approved: false,
         comment: rejectForm.value.reason,
       })
-      $message.success('驳回完成')
+      $message.success('驳回已提交，通知邮件已发送')
       rejectModalVisible.value = false
       $table.value?.handleSearch()
     } finally {
@@ -57,53 +96,93 @@ function submitReject() {
   })
 }
 
-const columns = [
+const baseColumns = [
+  { title: '提交时间', key: 'created_at', align: 'center' },
+  {
+    title: '注册类型',
+    key: 'register_type',
+    align: 'center',
+    render(row) {
+      return registerTypeTextMap[row.register_type] || '-'
+    },
+  },
   { title: '公司名称', key: 'company_name', align: 'center' },
   { title: '联系人', key: 'contact_name', align: 'center' },
   { title: '邮箱', key: 'email', align: 'center' },
   { title: '手机号', key: 'phone', align: 'center' },
-  { title: '用户名', key: 'username', align: 'center' },
+  { title: '设备机器码', key: 'hardware_id', align: 'center', render: (row) => row.hardware_id || '-' },
   {
     title: '状态',
     key: 'status',
     align: 'center',
     render(row) {
       const type = row.status === 'pending' ? 'warning' : row.status === 'approved' ? 'success' : 'error'
-      return h(NTag, { type }, { default: () => row.status })
+      return h(NTag, { type }, { default: () => statusTextMap[row.status] || row.status })
     },
   },
   {
-    title: '操作',
-    key: 'actions',
+    title: '审核时间',
+    key: 'reviewed_at',
     align: 'center',
     render(row) {
-      if (row.status !== 'pending') return '-'
-      return [
-        h(
-          NButton,
-          {
-            size: 'small',
-            type: 'primary',
-            style: 'margin-right: 8px',
-            onClick: () => review(row, true),
-          },
-          { default: () => '通过' }
-        ),
-        h(
-          NButton,
-          { size: 'small', type: 'error', onClick: () => openRejectModal(row) },
-          {
-            default: () => '驳回',
-          }
-        ),
-      ]
+      return row.reviewed_at || '-'
+    },
+  },
+  {
+    title: '驳回理由',
+    key: 'review_comment',
+    align: 'center',
+    render(row) {
+      if (row.status === 'rejected') {
+        return row.review_comment || '-'
+      }
+      return '-'
     },
   },
 ]
+
+const actionColumn = {
+  title: '操作',
+  key: 'actions',
+  align: 'center',
+  render(row) {
+    if (row.status !== 'pending') return '-'
+    return [
+      h(
+        NButton,
+        {
+          size: 'small',
+          type: 'primary',
+          style: 'margin-right: 8px',
+          onClick: () => review(row, true),
+        },
+        { default: () => '通过' }
+      ),
+      h(
+        NButton,
+        { size: 'small', type: 'error', onClick: () => openRejectModal(row) },
+        {
+          default: () => '驳回',
+        }
+      ),
+    ]
+  },
+}
+
+const columns = computed(() => {
+  if (activeTab.value === 'reviewed') {
+    return baseColumns
+  }
+  return [...baseColumns, actionColumn]
+})
 </script>
 
 <template>
-  <CommonPage title="代理商注册审核" show-footer>
+  <CommonPage title="注册审核" show-footer>
+    <NTabs type="line" :value="activeTab" @update:value="handleTabChange" mb-12>
+      <NTabPane name="pending" tab="待审核" />
+      <NTabPane name="reviewed" tab="已审核" />
+    </NTabs>
     <CrudTable
       ref="$table"
       v-model:query-items="queryItems"
@@ -111,11 +190,20 @@ const columns = [
       :get-data="api.getPartnerRegisterList"
     >
       <template #queryBar>
+        <QueryBarItem label="注册类型" :label-width="60">
+          <NSelect
+            v-model:value="queryItems.register_type"
+            :options="registerTypeOptions"
+            placeholder="全部注册类型"
+            style="width: 180px"
+            @update:value="handleRegisterTypeChange"
+          />
+        </QueryBarItem>
         <QueryBarItem label="关键词" :label-width="50">
           <NInput
             v-model:value="queryItems.keyword"
             clearable
-            placeholder="公司/联系人/邮箱"
+            placeholder="公司/联系人/邮箱/手机号"
             @keypress.enter="$table?.handleSearch()"
           />
         </QueryBarItem>
@@ -131,7 +219,7 @@ const columns = [
       <template #footer>
         <div flex justify-end>
           <NButton @click="rejectModalVisible = false">取消</NButton>
-          <NButton ml-12 type="error" :loading="rejectSubmitting" @click="submitReject">确认驳回</NButton>
+          <NButton ml-12 type="error" :loading="rejectSubmitting" @click="submitReject">提交驳回</NButton>
         </div>
       </template>
     </NModal>

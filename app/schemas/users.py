@@ -8,6 +8,7 @@ class BaseUser(BaseModel):
     id: int
     email: Optional[EmailStr] = None
     username: Optional[str] = None
+    alias: Optional[str] = None
     is_active: Optional[bool] = True
     is_superuser: Optional[bool] = False
     created_at: Optional[datetime]
@@ -19,6 +20,7 @@ class BaseUser(BaseModel):
 class UserCreate(BaseModel):
     email: EmailStr = Field(example="admin@qq.com")
     username: str = Field(example="admin")
+    alias: Optional[str] = Field(default=None, description="用户姓名")
     password: str = Field(example="123456")
     is_active: Optional[bool] = True
     is_superuser: Optional[bool] = False
@@ -33,6 +35,7 @@ class UserUpdate(BaseModel):
     id: int
     email: EmailStr
     username: str
+    alias: Optional[str] = None
     is_active: Optional[bool] = True
     is_superuser: Optional[bool] = False
     role_ids: Optional[List[int]] = []

@@ -3,6 +3,7 @@ from datetime import datetime
 from fastapi import APIRouter, File, HTTPException, Query, UploadFile
 from tortoise.expressions import Q
 
+from app.log import logger
 from app.controllers.captcha import captcha_controller
 from app.controllers.partner import partner_controller
 from app.controllers.system_setting import system_setting_controller
@@ -40,9 +41,10 @@ async def upload_ticket_attachment(file: UploadFile = File(...)):
 @router.post("/create", summary="提交工单", dependencies=[DependAuth])
 async def create_ticket(payload: TicketCreate):
     user = await _get_current_user()
+    logger.info("[api.ticket.create] request user_id={} title={} category={}", user.id, payload.title, payload.category)
     role_names = await _get_user_role_names(user)
     if not user.is_superuser and not any(role in role_names for role in ["用户", "渠道商", "代理商", "技术", "管理员"]):
-        return Fail(code=403, msg="当前角色不允许提交工单")
+        return Fail(code=403, msg="您当前账号暂无提交工单权限，请联系管理员")
 
     pending = await partner_controller.has_pending_registration(
         email=user.email,
@@ -51,19 +53,21 @@ async def create_ticket(payload: TicketCreate):
         hardware_id=user.hardware_id,
     )
     if pending:
-        return Fail(code=403, msg="当前账号存在待审核注册申请，暂不允许提交工单")
+        return Fail(code=403, msg="您的注册申请仍在审核中，暂不可提交工单")
 
     valid = await captcha_controller.verify_captcha(payload.captcha_id, payload.captcha_code)
     if not valid:
-        return Fail(code=400, msg="验证码错误或已过期")
+        logger.warning("[api.ticket.create] captcha_invalid user_id={}", user.id)
+        return Fail(code=400, msg="验证码错误或已失效，请重试")
 
     config = await system_setting_controller.get_public_config()
     categories = config.get("ticket_categories") or []
     if categories and payload.category not in categories:
-        return Fail(code=400, msg="问题分类不合法，请刷新页面后重试")
+        return Fail(code=400, msg="问题分类已更新，请刷新页面后重新选择")
 
     body = payload.model_dump(exclude={"captcha_id", "captcha_code"})
     ticket = await ticket_controller.create_ticket(submitter_id=user.id, payload=body)
+    logger.info("[api.ticket.create] success user_id={} ticket_id={}", user.id, ticket.id)
     return Success(msg="提交成功", data=await ticket.to_dict())
 
 
@@ -128,7 +132,7 @@ async def get_ticket(ticket_id: int = Query(..., description="工单ID")):
     ticket = await Ticket.get(id=ticket_id)
     if not user.is_superuser and "管理员" not in role_names and "客服" not in role_names:
         if ticket.submitter_id != user.id and ticket.tech_id != user.id:
-            return Fail(code=403, msg="无权限查看该工单")
+            return Fail(code=403, msg="您暂无权限查看该工单")
     detail = await ticket_controller.get_ticket_detail(ticket_id=ticket_id)
     return Success(data=detail)
 
@@ -136,9 +140,10 @@ async def get_ticket(ticket_id: int = Query(..., description="工单ID")):
 @router.post("/review", summary="客服审核工单", dependencies=[DependAuth])
 async def review_ticket(payload: TicketReviewIn):
     user = await _get_current_user()
+    logger.info("[api.ticket.review] request user_id={} ticket_id={} approved={}", user.id, payload.ticket_id, payload.approved)
     role_names = await _get_user_role_names(user)
     if not user.is_superuser and "管理员" not in role_names and "客服" not in role_names:
-        return Fail(code=403, msg="仅客服或管理员可审核工单")
+        return Fail(code=403, msg="仅客服或管理员可执行审核操作")
 
     ticket = await ticket_controller.set_customer_service_review(
         ticket_id=payload.ticket_id,
@@ -146,12 +151,19 @@ async def review_ticket(payload: TicketReviewIn):
         approved=payload.approved,
         comment=payload.comment,
     )
+    logger.info("[api.ticket.review] success user_id={} ticket_id={} status={}", user.id, ticket.id, ticket.status)
     return Success(msg="审核成功", data=await ticket.to_dict())
 
 
 @router.post("/tech/action", summary="技术处理工单", dependencies=[DependAuth])
 async def tech_action_ticket(payload: TicketTechActionIn):
     user = await _get_current_user()
+    logger.info(
+        "[api.ticket.tech_action] request user_id={} ticket_id={} action={}",
+        user.id,
+        payload.ticket_id,
+        payload.action,
+    )
     role_names = await _get_user_role_names(user)
     if not user.is_superuser and "管理员" not in role_names and "技术" not in role_names:
         return Fail(code=403, msg="仅技术或管理员可处理工单")
@@ -163,12 +175,14 @@ async def tech_action_ticket(payload: TicketTechActionIn):
         comment=payload.comment,
     )
 
+    logger.info("[api.ticket.tech_action] success user_id={} ticket_id={} status={}", user.id, ticket.id, ticket.status)
     return Success(msg="处理成功", data=await ticket.to_dict())
 
 
 @router.post("/resubmit", summary="重提工单", dependencies=[DependAuth])
 async def resubmit_ticket(payload: TicketResubmitIn):
     user = await _get_current_user()
+    logger.info("[api.ticket.resubmit] request user_id={} ticket_id={}", user.id, payload.ticket_id)
     pending = await partner_controller.has_pending_registration(
         email=user.email,
         phone=user.phone,
@@ -176,11 +190,12 @@ async def resubmit_ticket(payload: TicketResubmitIn):
         hardware_id=user.hardware_id,
     )
     if pending:
-        return Fail(code=403, msg="当前账号存在待审核注册申请，暂不允许提交工单")
+        return Fail(code=403, msg="您的注册申请仍在审核中，暂不可提交工单")
 
     valid = await captcha_controller.verify_captcha(payload.captcha_id, payload.captcha_code)
     if not valid:
-        return Fail(code=400, msg="验证码错误或已过期")
+        logger.warning("[api.ticket.resubmit] captcha_invalid user_id={} ticket_id={}", user.id, payload.ticket_id)
+        return Fail(code=400, msg="验证码错误或已失效，请重试")
 
     ticket = await ticket_controller.resubmit_ticket(
         ticket_id=payload.ticket_id,
@@ -188,6 +203,7 @@ async def resubmit_ticket(payload: TicketResubmitIn):
         description=payload.description,
         attachment_ids=payload.attachment_ids,
     )
+    logger.info("[api.ticket.resubmit] success user_id={} ticket_id={} status={}", user.id, ticket.id, ticket.status)
     return Success(msg="重提成功", data=await ticket.to_dict())
 
 

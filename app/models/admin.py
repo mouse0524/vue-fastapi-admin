@@ -8,7 +8,7 @@ from .enums import MethodType, PartnerRegisterStatus, RegisterType, TicketAction
 
 class User(BaseModel, TimestampMixin):
     username = fields.CharField(max_length=20, unique=True, description="用户名称", index=True)
-    alias = fields.CharField(max_length=30, null=True, description="姓名", index=True)
+    alias = fields.CharField(max_length=30, null=True, description="用户姓名", index=True)
     company_name = fields.CharField(max_length=120, null=True, description="公司名称", index=True)
     hardware_id = fields.CharField(max_length=80, null=True, unique=True, description="产品硬件ID", index=True)
     email = fields.CharField(max_length=255, unique=True, description="邮箱", index=True)

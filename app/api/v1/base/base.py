@@ -3,6 +3,7 @@ from datetime import datetime, timedelta, timezone
 from fastapi import APIRouter
 from fastapi.responses import FileResponse
 
+from app.log import logger
 from app.controllers.user import user_controller
 from app.controllers.captcha import captcha_controller
 from app.controllers.mail import mail_controller
@@ -25,8 +26,10 @@ router = APIRouter()
 
 @router.post("/access_token", summary="获取token")
 async def login_access_token(credentials: CredentialsSchema):
+    logger.info("[api.login] start username={}", credentials.username)
     valid = await captcha_controller.verify_captcha(credentials.captcha_id, credentials.captcha_code)
     if not valid:
+        logger.warning("[api.login] captcha_invalid username={} captcha_id={}", credentials.username, credentials.captcha_id)
         return Fail(code=400, msg=f"登录验证码错误或已过期（最多{settings.CAPTCHA_MAX_RETRY}次）")
 
     user: User = await user_controller.authenticate(credentials)
@@ -45,6 +48,7 @@ async def login_access_token(credentials: CredentialsSchema):
         ),
         username=user.username,
     )
+    logger.info("[api.login] success username={} user_id={}", user.username, user.id)
     return Success(data=data.model_dump())
 
 
@@ -71,20 +75,24 @@ async def get_site_logo():
 async def send_email_code(payload: SendVerifyCodeIn):
     config = await system_setting_controller.get_public_config()
     if not config.get("allow_partner_register", True):
-        return Fail(code=403, msg="当前未开放注册")
+        return Fail(code=403, msg="当前暂未开放注册，如需开通请联系平台管理员")
 
     email = payload.email.strip().lower()
+    logger.info("[api.send_email_code] start email={}", email)
     if await User.filter(email=email).exists():
-        return Fail(code=400, msg="邮箱已被注册")
+        logger.warning("[api.send_email_code] email_exists email={}", email)
+        return Fail(code=400, msg="该邮箱已完成注册，可直接登录")
 
     if await PartnerRegistration.filter(status=PartnerRegisterStatus.PENDING, email=email).exists():
-        return Fail(code=400, msg="该邮箱已有待审核申请")
+        return Fail(code=400, msg="该邮箱已有待审核申请，请耐心等待审核结果")
 
     valid = await captcha_controller.verify_captcha(payload.captcha_id, payload.captcha_code)
     if not valid:
-        return Fail(code=400, msg=f"验证码错误或已过期（最多{settings.CAPTCHA_MAX_RETRY}次）")
+        logger.warning("[api.send_email_code] captcha_invalid email={} captcha_id={}", email, payload.captcha_id)
+        return Fail(code=400, msg=f"图形验证码错误或已失效，请重试（最多{settings.CAPTCHA_MAX_RETRY}次）")
 
     await mail_controller.send_partner_verify_code(email)
+    logger.info("[api.send_email_code] success email={}", email)
     return Success(msg="验证码已发送，请查收邮箱")
 
 

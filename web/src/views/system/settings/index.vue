@@ -133,7 +133,7 @@ function save() {
     try {
       saving.value = true
       await api.updateSystemSettings(form.value)
-      $message.success('保存成功')
+      $message.success('设置已保存并生效')
       const publicRes = await api.getPublicConfig()
       appStore.setSiteConfig(publicRes.data || {})
       await loadData()
@@ -151,7 +151,7 @@ async function uploadLogo({ file, onFinish, onError }) {
     appStore.setSiteConfig(publicRes.data || {})
     const res = await api.getSystemSettings()
     form.value.site_logo = res.data?.site_logo || ''
-    $message.success('Logo上传成功')
+    $message.success('Logo已上传并更新')
     onFinish()
   } catch (error) {
     onError()
@@ -185,7 +185,7 @@ function applyPresetHtmlTemplates() {
   form.value.register_review_reject_template = presetTemplates.rejectHtml
   form.value.register_review_reject_is_html = true
 
-  $message.success('已应用推荐HTML模板，请保存设置生效')
+  $message.success('推荐模板已应用，请保存后生效')
 }
 </script>
 

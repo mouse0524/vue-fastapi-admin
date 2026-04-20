@@ -7,7 +7,7 @@
     <n-data-table
       :remote="remote"
       :loading="loading"
-      :columns="columns"
+      :columns="tableColumns"
       :data="tableData"
       :scroll-x="scrollX"
       :row-key="(row) => row[rowKey]"
@@ -76,6 +76,21 @@ const emit = defineEmits(['update:queryItems', 'onChecked', 'onDataChange'])
 const loading = ref(false)
 const initQuery = { ...props.queryItems }
 const tableData = ref([])
+const tableColumns = computed(() => {
+  return (props.columns || []).map((col) => {
+    if (!col || typeof col !== 'object') return col
+    const type = col.type || ''
+    const key = col.key || ''
+    const isActionColumn = key === 'actions' || key === 'operation' || key === 'op'
+    if (type || isActionColumn || col.ellipsis !== undefined) {
+      return col
+    }
+    return {
+      ...col,
+      ellipsis: { tooltip: true },
+    }
+  })
+})
 const pagination = reactive({
   page: 1,
   page_size: 10,
@@ -107,8 +122,8 @@ async function handleQuery() {
       ...props.extraParams,
       ...paginationParams,
     })
-    tableData.value = data
-    pagination.itemCount = total || 0
+    tableData.value = Array.isArray(data) ? data : []
+    pagination.itemCount = total ?? tableData.value.length
   } catch (error) {
     tableData.value = []
     pagination.itemCount = 0

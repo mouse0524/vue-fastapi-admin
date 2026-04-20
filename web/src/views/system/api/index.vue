@@ -46,10 +46,10 @@ async function handleRefreshApi() {
   await $dialog.confirm({
     title: '提示',
     type: 'warning',
-    content: '此操作会根据后端 app.routes 进行路由更新，确定继续刷新 API 操作？',
+    content: '将根据后端路由重新同步接口清单，建议在低峰时段执行。是否继续？',
     async confirm() {
       await api.refreshApi()
-      $message.success('刷新完成')
+      $message.success('接口清单已刷新')
       $table.value?.handleSearch()
     },
   })
@@ -165,7 +165,7 @@ const columns = [
                 ),
                 [[vPermission, 'delete/api/v1/api/delete']]
               ),
-            default: () => h('div', {}, '确定删除该API吗?'),
+            default: () => h('div', {}, '删除后将无法恢复，是否确认删除该接口？'),
           }
         ),
       ]

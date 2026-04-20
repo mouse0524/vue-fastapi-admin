@@ -4,6 +4,7 @@ from datetime import datetime
 
 from fastapi import HTTPException, UploadFile
 
+from app.log import logger
 from app.models.admin import SystemSetting
 from app.settings import settings
 
@@ -13,6 +14,7 @@ class SystemSettingController:
         setting = await SystemSetting.first()
         if not setting:
             setting = await SystemSetting.create()
+            logger.info("[settings] create default setting_id={}", setting.id)
         return setting
 
     async def get_public_config(self) -> dict:
@@ -27,12 +29,15 @@ class SystemSettingController:
         }
 
     async def update(self, payload: dict) -> SystemSetting:
+        logger.info("[settings.update] start keys={}", sorted(list(payload.keys())))
         setting = await self.get_or_create()
         setting.update_from_dict(payload)
         await setting.save()
+        logger.info("[settings.update] success setting_id={}", setting.id)
         return setting
 
     async def upload_logo(self, file: UploadFile) -> str:
+        logger.info("[settings.logo] start filename={} content_type={}", file.filename, file.content_type)
         ext = os.path.splitext(file.filename or "")[1].lower()
         if ext not in {".jpg", ".jpeg", ".png", ".webp", ".svg"}:
             raise HTTPException(status_code=400, detail="Logo仅支持 jpg/jpeg/png/webp/svg")
@@ -56,6 +61,7 @@ class SystemSettingController:
         setting = await self.get_or_create()
         setting.site_logo = rel_path
         await setting.save()
+        logger.info("[settings.logo] success setting_id={} path={}", setting.id, rel_path)
         return rel_path
 
     async def get_logo_abs_path(self) -> str:

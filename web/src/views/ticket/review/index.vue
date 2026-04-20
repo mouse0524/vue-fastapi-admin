@@ -29,7 +29,7 @@ async function review(row, approved) {
     approved,
     comment: approved ? '审核通过' : '客服驳回',
   })
-  $message.success('操作成功')
+  $message.success('审核操作已完成')
   $table.value?.handleSearch()
 }
 
@@ -68,7 +68,7 @@ const columns = [
           { onPositiveClick: () => review(row, false) },
           {
             trigger: () => h(NButton, { size: 'small', type: 'error' }, { default: () => '驳回' }),
-            default: () => '确认驳回该工单吗？',
+            default: () => '驳回后提交方需补充信息后重提，是否确认驳回？',
           }
         ),
       ]

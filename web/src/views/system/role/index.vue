@@ -61,6 +61,20 @@ const apiOption = ref([])
 const api_ids = ref([])
 const apiTree = ref([])
 
+const roleTagTypeMap = {
+  管理员: 'error',
+  超级管理员: 'error',
+  客服: 'warning',
+  技术: 'success',
+  用户: 'info',
+  渠道商: 'primary',
+  代理商: 'primary',
+}
+
+function getRoleTagType(roleName) {
+  return roleTagTypeMap[roleName] || 'default'
+}
+
 function buildApiTree(data) {
   const processedData = []
   const groupedData = {}
@@ -99,7 +113,7 @@ const columns = [
     align: 'center',
     ellipsis: { tooltip: true },
     render(row) {
-      return h(NTag, { type: 'info' }, { default: () => row.name })
+      return h(NTag, { type: getRoleTagType(row.name), bordered: false }, { default: () => row.name })
     },
   },
   {
@@ -166,7 +180,7 @@ const columns = [
                 ),
                 [[vPermission, 'delete/api/v1/role/delete']]
               ),
-            default: () => h('div', {}, '确定删除该角色吗?'),
+            default: () => h('div', {}, '删除后该角色授权将失效，是否确认删除？'),
           }
         ),
         withDirectives(

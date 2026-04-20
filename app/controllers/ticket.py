@@ -5,6 +5,7 @@ from datetime import datetime
 from fastapi import HTTPException, UploadFile
 from tortoise.expressions import Q
 
+from app.log import logger
 from app.models.admin import Ticket, TicketActionLog, TicketAttachment, User
 from app.models.enums import TicketActionType, TicketStatus
 from app.settings import settings
@@ -35,6 +36,7 @@ class TicketController:
         )
 
     async def create_ticket(self, *, submitter_id: int, payload: dict) -> Ticket:
+        logger.info("[ticket.create] start submitter_id={} category={} title={}", submitter_id, payload.get("category"), payload.get("title"))
         attachment_ids = payload.pop("attachment_ids", [])
         ticket = await Ticket.create(
             ticket_no=self._next_ticket_no(),
@@ -56,6 +58,13 @@ class TicketController:
             operator_id=submitter_id,
             comment=None,
         )
+        logger.info(
+            "[ticket.create] success ticket_id={} ticket_no={} submitter_id={} attachment_count={}",
+            ticket.id,
+            ticket.ticket_no,
+            submitter_id,
+            len(attachment_ids),
+        )
         return ticket
 
     async def get_ticket(self, ticket_id: int) -> Ticket:
@@ -65,11 +74,19 @@ class TicketController:
         query = Ticket.filter(search)
         total = await query.count()
         rows = await query.offset((page - 1) * page_size).limit(page_size).order_by("-id")
+        logger.info("[ticket.list] page={} page_size={} total={}", page, page_size, total)
         return total, rows
 
     async def set_customer_service_review(
         self, *, ticket_id: int, reviewer_id: int, approved: bool, comment: str | None
     ) -> Ticket:
+        logger.info(
+            "[ticket.cs_review] start ticket_id={} reviewer_id={} approved={} comment={}",
+            ticket_id,
+            reviewer_id,
+            approved,
+            comment,
+        )
         ticket = await self.get_ticket(ticket_id)
         if ticket.status != TicketStatus.PENDING_REVIEW:
             raise HTTPException(status_code=400, detail="当前状态不可进行客服审核")
@@ -95,11 +112,25 @@ class TicketController:
             operator_id=reviewer_id,
             comment=comment,
         )
+        logger.info(
+            "[ticket.cs_review] success ticket_id={} from_status={} to_status={} reviewer_id={}",
+            ticket.id,
+            old_status,
+            ticket.status,
+            reviewer_id,
+        )
         return ticket
 
     async def set_tech_action(
         self, *, ticket_id: int, tech_id: int, action: TicketActionType, comment: str | None
     ) -> Ticket:
+        logger.info(
+            "[ticket.tech_action] start ticket_id={} tech_id={} action={} comment={}",
+            ticket_id,
+            tech_id,
+            action,
+            comment,
+        )
         ticket = await self.get_ticket(ticket_id)
         if ticket.status != TicketStatus.TECH_PROCESSING:
             raise HTTPException(status_code=400, detail="当前状态不可进行技术处理")
@@ -129,11 +160,25 @@ class TicketController:
             operator_id=tech_id,
             comment=comment,
         )
+        logger.info(
+            "[ticket.tech_action] success ticket_id={} from_status={} to_status={} tech_id={}",
+            ticket.id,
+            old_status,
+            ticket.status,
+            tech_id,
+        )
         return ticket
 
     async def resubmit_ticket(
         self, *, ticket_id: int, submitter_id: int, description: str | None, attachment_ids: list[int]
     ) -> Ticket:
+        logger.info(
+            "[ticket.resubmit] start ticket_id={} submitter_id={} attachment_count={} has_description={}",
+            ticket_id,
+            submitter_id,
+            len(attachment_ids),
+            bool(description),
+        )
         ticket = await self.get_ticket(ticket_id)
         if ticket.submitter_id != submitter_id:
             raise HTTPException(status_code=403, detail="只能由提交人重提工单")
@@ -162,9 +207,17 @@ class TicketController:
             operator_id=submitter_id,
             comment="重提工单",
         )
+        logger.info(
+            "[ticket.resubmit] success ticket_id={} from_status={} to_status={} submitter_id={}",
+            ticket.id,
+            old_status,
+            ticket.status,
+            submitter_id,
+        )
         return ticket
 
     async def upload_attachment(self, *, uploader_id: int, file: UploadFile) -> TicketAttachment:
+        logger.info("[ticket.upload] start uploader_id={} filename={} content_type={}", uploader_id, file.filename, file.content_type)
         ext = os.path.splitext(file.filename or "")[1].lower()
         if ext not in settings.ALLOWED_EXTENSIONS:
             raise HTTPException(status_code=400, detail="不支持的文件类型")
@@ -185,7 +238,7 @@ class TicketController:
         with open(abs_path, "wb") as f:
             f.write(data)
 
-        return await TicketAttachment.create(
+        attachment = await TicketAttachment.create(
             ticket_id=None,
             origin_name=file.filename or filename,
             file_path=rel_path,
@@ -193,6 +246,14 @@ class TicketController:
             mime_type=file.content_type or "application/octet-stream",
             uploader_id=uploader_id,
         )
+        logger.info(
+            "[ticket.upload] success attachment_id={} uploader_id={} size={} path={}",
+            attachment.id,
+            uploader_id,
+            attachment.file_size,
+            attachment.file_path,
+        )
+        return attachment
 
     async def get_ticket_detail(self, ticket_id: int) -> dict:
         ticket = await self.get_ticket(ticket_id)

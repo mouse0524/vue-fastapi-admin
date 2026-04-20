@@ -27,7 +27,7 @@ async function updateProfile() {
       .then(() => {
         userStore.setUserInfo(infoForm.value)
         isLoading.value = false
-        $message.success(t('common.text.update_success'))
+        $message.success('个人信息已更新')
       })
       .catch(() => {
         isLoading.value = false
@@ -60,7 +60,7 @@ async function updatePassword() {
       await api
         .updatePassword(data)
         .then((res) => {
-          $message.success(res.msg)
+          $message.success(res.msg || '密码已更新')
           passwordForm.value = {
             old_password: '',
             new_password: '',

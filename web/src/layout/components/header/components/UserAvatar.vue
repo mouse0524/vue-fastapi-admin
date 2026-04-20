@@ -42,7 +42,7 @@ function handleSelect(key) {
       content: t('header.text_logout_confirm'),
       confirm() {
         userStore.logout()
-        $message.success(t('header.text_logout_success'))
+        $message.success('您已安全退出登录')
       },
     })
   }

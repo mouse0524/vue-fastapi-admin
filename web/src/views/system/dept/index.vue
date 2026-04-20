@@ -131,7 +131,7 @@ const columns = [
                 ),
                 [[vPermission, 'delete/api/v1/dept/delete']]
               ),
-            default: () => h('div', {}, '确定删除该部门吗?'),
+            default: () => h('div', {}, '删除后该部门及关联关系将失效，是否确认删除？'),
           }
         ),
       ]

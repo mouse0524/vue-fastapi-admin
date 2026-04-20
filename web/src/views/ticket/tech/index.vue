@@ -29,7 +29,7 @@ async function takeAction(row, action) {
     action,
     comment: action === 'finish' ? '技术处理完成' : action === 'tech_reject' ? '技术驳回' : '处理中',
   })
-  $message.success('操作成功')
+  $message.success('处理操作已完成')
   $table.value?.handleSearch()
 }
 
@@ -71,7 +71,7 @@ const columns = [
           { onPositiveClick: () => takeAction(row, 'tech_reject') },
           {
             trigger: () => h(NButton, { size: 'small', type: 'error' }, { default: () => '驳回' }),
-            default: () => '确认技术驳回该工单吗？',
+            default: () => '驳回后工单将回到审核中，是否确认驳回？',
           }
         ),
       ]

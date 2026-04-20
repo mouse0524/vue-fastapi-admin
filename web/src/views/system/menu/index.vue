@@ -209,7 +209,7 @@ const columns = [
                 ),
                 [[vPermission, 'delete/api/v1/menu/delete']]
               ),
-            default: () => h('div', {}, '确定删除该菜单吗?'),
+            default: () => h('div', {}, '删除后该菜单及关联入口将不可用，是否继续？'),
           }
         ),
       ]

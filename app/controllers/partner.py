@@ -3,13 +3,73 @@ from datetime import datetime
 from fastapi import HTTPException
 from tortoise.expressions import Q
 
-from app.models.admin import PartnerRegistration, Role, User
+from app.log import logger
+from app.models.admin import Dept, DeptClosure, PartnerRegistration, Role, User
 from app.models.enums import PartnerRegisterStatus, RegisterType
 from app.controllers.mail import mail_controller
 from app.utils.password import get_password_hash
 
 
 class PartnerController:
+    @staticmethod
+    async def _build_unique_dept_name(raw_name: str, fallback_name: str) -> str:
+        max_len = 20
+        base = (raw_name or "").strip() or fallback_name
+        base = base[:max_len] or fallback_name[:max_len] or "部门"
+
+        if not await Dept.filter(name=base).exists():
+            return base
+
+        index = 2
+        while True:
+            suffix = f"-{index}"
+            keep_len = max_len - len(suffix)
+            keep_len = keep_len if keep_len > 0 else 1
+            candidate = f"{base[:keep_len]}{suffix}"
+            if not await Dept.filter(name=candidate).exists():
+                return candidate
+            index += 1
+
+    @staticmethod
+    async def _ensure_dept(name: str, parent_id: int = 0, desc: str = "") -> Dept:
+        dept_obj = await Dept.filter(name=name).first()
+        if dept_obj:
+            logger.info("[partner.dept] reuse dept name={} dept_id={} parent_id={}", name, dept_obj.id, dept_obj.parent_id)
+            if dept_obj.is_deleted:
+                dept_obj.is_deleted = False
+                dept_obj.parent_id = parent_id
+                dept_obj.desc = desc or dept_obj.desc
+                await dept_obj.save()
+                logger.info("[partner.dept] revive dept name={} dept_id={} parent_id={}", name, dept_obj.id, parent_id)
+            return dept_obj
+
+        dept_obj = await Dept.create(name=name, parent_id=parent_id, desc=desc, order=0, is_deleted=False)
+        logger.info("[partner.dept] create dept name={} dept_id={} parent_id={}", name, dept_obj.id, parent_id)
+
+        closure_rows = []
+        if parent_id != 0:
+            parent_paths = await DeptClosure.filter(descendant=parent_id)
+            for item in parent_paths:
+                closure_rows.append(DeptClosure(ancestor=item.ancestor, descendant=dept_obj.id, level=item.level + 1))
+        closure_rows.append(DeptClosure(ancestor=dept_obj.id, descendant=dept_obj.id, level=0))
+        await DeptClosure.bulk_create(closure_rows)
+        return dept_obj
+
+    async def _ensure_user_dept(self, register_obj: PartnerRegistration) -> Dept:
+        if register_obj.register_type == RegisterType.CHANNEL:
+            parent_name = "渠道部门"
+        else:
+            parent_name = "用户部门"
+
+        parent_dept = await self._ensure_dept(parent_name, parent_id=0, desc="注册审核自动创建")
+        child_name = await self._build_unique_dept_name(
+            raw_name=(register_obj.company_name or "").strip() or register_obj.contact_name,
+            fallback_name=register_obj.contact_name,
+        )
+        child_desc = f"{('渠道商' if register_obj.register_type == RegisterType.CHANNEL else '用户')}注册自动创建"
+        child_dept = await self._ensure_dept(child_name, parent_id=parent_dept.id, desc=child_desc)
+        return child_dept
+
     @staticmethod
     async def has_pending_registration(
         *,
@@ -92,6 +152,13 @@ class PartnerController:
     async def review(
         self, *, register_id: int, reviewer_id: int, approved: bool, comment: str | None
     ) -> PartnerRegistration:
+        logger.info(
+            "[partner.review] start register_id={} reviewer_id={} approved={} comment={}",
+            register_id,
+            reviewer_id,
+            approved,
+            comment,
+        )
         register_obj = await PartnerRegistration.get(id=register_id)
         if register_obj.status != PartnerRegisterStatus.PENDING:
             raise HTTPException(status_code=400, detail="该申请已审核")
@@ -101,35 +168,53 @@ class PartnerController:
         register_obj.reviewed_at = datetime.now()
 
         if approved:
-            role_name = "渠道商" if register_obj.register_type == RegisterType.CHANNEL else "用户"
-            role = await Role.filter(name=role_name).first()
-            if not role and role_name == "渠道商":
-                role = await Role.filter(name="代理商").first()
-            if not role:
-                raise HTTPException(status_code=500, detail=f"{role_name}角色不存在")
+            try:
+                role_name = "渠道商" if register_obj.register_type == RegisterType.CHANNEL else "用户"
+                role = await Role.filter(name=role_name).first()
+                if not role and role_name == "渠道商":
+                    role = await Role.filter(name="代理商").first()
+                if not role:
+                    raise HTTPException(status_code=500, detail=f"{role_name}角色不存在")
 
-            if await User.filter(email=register_obj.email).exists():
-                raise HTTPException(status_code=400, detail="邮箱已被注册")
-            if await User.filter(username=register_obj.username).exists():
-                raise HTTPException(status_code=400, detail="用户名已存在")
-            if await User.filter(phone=register_obj.phone).exists():
-                raise HTTPException(status_code=400, detail="手机号已被注册")
-            if register_obj.hardware_id and await User.filter(hardware_id=register_obj.hardware_id).exists():
-                raise HTTPException(status_code=400, detail="产品硬件ID已被注册")
+                if await User.filter(email=register_obj.email).exists():
+                    raise HTTPException(status_code=400, detail="邮箱已被注册")
+                if await User.filter(username=register_obj.username).exists():
+                    raise HTTPException(status_code=400, detail="用户名已存在")
+                if await User.filter(phone=register_obj.phone).exists():
+                    raise HTTPException(status_code=400, detail="手机号已被注册")
+                if register_obj.hardware_id and await User.filter(hardware_id=register_obj.hardware_id).exists():
+                    raise HTTPException(status_code=400, detail="产品硬件ID已被注册")
 
-            user = await User.create(
-                username=register_obj.email,
-                company_name=register_obj.company_name,
-                email=register_obj.email,
-                phone=register_obj.phone,
-                hardware_id=register_obj.hardware_id,
-                alias=register_obj.contact_name,
-                password=register_obj.password_hash,
-                is_active=True,
-                is_superuser=False,
-            )
-            await user.roles.add(role)
-            register_obj.status = PartnerRegisterStatus.APPROVED
+                dept_obj = await self._ensure_user_dept(register_obj)
+                logger.info(
+                    "[partner.review] dept_ready register_id={} dept_id={} dept_name={}",
+                    register_obj.id,
+                    dept_obj.id,
+                    dept_obj.name,
+                )
+
+                user = await User.create(
+                    username=register_obj.email,
+                    company_name=register_obj.company_name,
+                    email=register_obj.email,
+                    phone=register_obj.phone,
+                    hardware_id=register_obj.hardware_id,
+                    alias=register_obj.contact_name,
+                    password=register_obj.password_hash,
+                    is_active=True,
+                    is_superuser=False,
+                    dept_id=dept_obj.id,
+                )
+                await user.roles.add(role)
+                register_obj.status = PartnerRegisterStatus.APPROVED
+            except Exception:
+                logger.exception(
+                    "[partner.review] failed register_id={} email={} register_type={}",
+                    register_obj.id,
+                    register_obj.email,
+                    register_obj.register_type,
+                )
+                raise
         else:
             register_obj.status = PartnerRegisterStatus.REJECTED
 
@@ -141,6 +226,13 @@ class PartnerController:
             register_type=register_obj.register_type,
             approved=approved,
             reason=comment,
+        )
+
+        logger.info(
+            "[partner.review] success register_id={} status={} reviewer_id={}",
+            register_obj.id,
+            register_obj.status,
+            reviewer_id,
         )
 
         return register_obj
