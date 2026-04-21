@@ -8,6 +8,7 @@ import api from '@/api'
 
 function buildRoutes(routes = []) {
   return routes.map((e) => {
+    const children = Array.isArray(e.children) ? e.children : []
     const route = {
       name: e.name,
       path: e.path,
@@ -23,26 +24,36 @@ function buildRoutes(routes = []) {
       children: [],
     }
 
-    if (e.children && e.children.length > 0) {
+    if (children.length > 0) {
       // 有子菜单
-      route.children = e.children.map((e_child) => ({
-        name: e_child.name,
-        path: e_child.path,
-        component: vueModules[`/src/views${e_child.component}/index.vue`],
-        isHidden: e_child.is_hidden,
-        meta: {
-          title: e_child.name,
-          icon: e_child.icon,
-          order: e_child.order,
-          keepAlive: e_child.keepalive,
-        },
-      }))
+      route.children = children
+        .map((e_child) => {
+          const component = vueModules[`/src/views${e_child.component}/index.vue`]
+          if (!component) return null
+          return {
+            name: e_child.name,
+            path: e_child.path,
+            component,
+            isHidden: e_child.is_hidden,
+            meta: {
+              title: e_child.name,
+              icon: e_child.icon,
+              order: e_child.order,
+              keepAlive: e_child.keepalive,
+            },
+          }
+        })
+        .filter(Boolean)
     } else {
       // 没有子菜单，创建一个默认的子路由
+      const component = vueModules[`/src/views${e.component}/index.vue`]
+      if (!component) {
+        return null
+      }
       route.children.push({
         name: `${e.name}Default`,
         path: '',
-        component: vueModules[`/src/views${e.component}/index.vue`],
+        component,
         isHidden: true,
         meta: {
           title: e.name,
@@ -54,7 +65,7 @@ function buildRoutes(routes = []) {
     }
 
     return route
-  })
+  }).filter(Boolean)
 }
 
 export const usePermissionStore = defineStore('permission', {

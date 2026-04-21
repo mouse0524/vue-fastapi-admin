@@ -29,6 +29,7 @@ class TicketTechActionIn(BaseModel):
     ticket_id: int = Field(..., description="工单ID")
     action: TicketActionType = Field(..., description="技术动作")
     comment: Optional[str] = Field(None, description="处理备注")
+    root_cause: Optional[str] = Field(None, description="问题根因")
 
 
 class TicketResubmitIn(BaseModel):

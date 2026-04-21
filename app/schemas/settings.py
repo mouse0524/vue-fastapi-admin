@@ -6,6 +6,7 @@ class SystemSettingUpdateIn(BaseModel):
     site_logo: str | None = Field(default=None, description="网站Logo")
     allow_partner_register: bool = Field(default=True, description="是否开放代理商注册")
     ticket_categories: list[str] = Field(default_factory=list, description="工单分类")
+    ticket_root_causes: list[str] = Field(default_factory=list, description="工单问题根因")
 
     smtp_host: str | None = None
     smtp_port: int = 465

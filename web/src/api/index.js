@@ -57,6 +57,7 @@ export default {
   getTicketById: (params = {}) => request.get('/ticket/get', { params }),
   reviewTicket: (data = {}) => request.post('/ticket/review', data),
   techActionTicket: (data = {}) => request.post('/ticket/tech/action', data),
+  downloadTicketAttachment: (params = {}) => request.get('/ticket/attachment/download', { params }),
   resubmitTicket: (data = {}) => request.post('/ticket/resubmit', data),
   getTicketActions: (params = {}) => request.get('/ticket/actions', { params }),
   uploadPublicTicketAttachment: (file) => {
@@ -110,6 +111,7 @@ export default {
   kbDocumentList: (params = {}) => request.get('/kb/document/list', { params }),
   kbDocumentCreate: (data = {}) => request.post('/kb/document/create', data),
   kbDocumentReparse: (data = {}) => request.post('/kb/document/reparse', null, { params: data }),
+  kbDocumentProcessPending: (params = {}) => request.post('/kb/document/process_pending', null, { params }),
   kbDocumentDelete: (data = {}) => request.post('/kb/document/delete', data),
   kbDocumentUpload: (spaceId, file, title = '') => {
     const formData = new FormData()

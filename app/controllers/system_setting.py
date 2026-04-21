@@ -42,6 +42,7 @@ class SystemSettingController:
             "site_logo": logo_url,
             "allow_partner_register": data.get("allow_partner_register"),
             "ticket_categories": data.get("ticket_categories") or [],
+            "ticket_root_causes": data.get("ticket_root_causes") or [],
         }
 
     async def test_webdav_connection(self, payload: dict | None = None) -> dict:

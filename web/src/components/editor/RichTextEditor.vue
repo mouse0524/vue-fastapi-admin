@@ -27,6 +27,7 @@ const emit = defineEmits(['update:modelValue'])
 const editorRef = ref(null)
 let quill = null
 let syncing = false
+let handleTextChange = null
 
 onMounted(() => {
   if (!editorRef.value) return
@@ -52,18 +53,20 @@ onMounted(() => {
   quill.root.style.overflowY = 'auto'
   quill.root.style.boxSizing = 'border-box'
   quill.root.innerHTML = props.modelValue || ''
-  quill.on('text-change', () => {
+  handleTextChange = () => {
     if (!quill) return
     syncing = true
     emit('update:modelValue', quill.root.innerHTML)
     syncing = false
-  })
+  }
+  quill.on('text-change', handleTextChange)
 })
 
 watch(
   () => props.modelValue,
   (val) => {
     if (!quill || syncing) return
+    if (!quill.root || !quill.root.isConnected) return
     const html = val || ''
     if (quill.root.innerHTML !== html) {
       quill.root.innerHTML = html
@@ -72,6 +75,13 @@ watch(
 )
 
 onBeforeUnmount(() => {
+  if (quill && handleTextChange) {
+    quill.off('text-change', handleTextChange)
+  }
+  handleTextChange = null
+  if (quill?.root) {
+    quill.disable()
+  }
   quill = null
 })
 </script>

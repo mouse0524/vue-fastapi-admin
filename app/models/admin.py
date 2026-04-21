@@ -105,6 +105,7 @@ class Ticket(BaseModel, TimestampMixin):
     reviewer_id = fields.BigIntField(null=True, description="客服审核人ID", index=True)
     tech_id = fields.BigIntField(null=True, description="技术处理人ID", index=True)
     reject_reason = fields.TextField(null=True, description="驳回原因")
+    root_cause = fields.CharField(max_length=120, null=True, description="问题根因", index=True)
     finished_at = fields.DatetimeField(null=True, description="完成时间", index=True)
 
     class Meta:
@@ -158,6 +159,7 @@ class SystemSetting(BaseModel, TimestampMixin):
     site_logo = fields.CharField(max_length=500, null=True, description="网站Logo")
     allow_partner_register = fields.BooleanField(default=True, description="是否开放代理商注册")
     ticket_categories = fields.JSONField(default=["登录问题", "权限问题", "系统异常", "其他"], description="工单分类")
+    ticket_root_causes = fields.JSONField(default=["代码缺陷", "配置错误", "环境异常", "数据问题", "操作不当", "第三方依赖"], description="工单问题根因")
 
     smtp_host = fields.CharField(max_length=120, null=True, description="SMTP主机")
     smtp_port = fields.IntField(default=465, description="SMTP端口")

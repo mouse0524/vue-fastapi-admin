@@ -1,6 +1,7 @@
 from datetime import datetime
 
 from fastapi import APIRouter, File, HTTPException, Query, UploadFile
+from fastapi.responses import FileResponse
 from tortoise.expressions import Q
 
 from app.log import logger
@@ -89,6 +90,7 @@ async def list_ticket(
     page_size: int = Query(10, description="每页数量"),
     status: TicketStatus | None = Query(None, description="状态"),
     category: str | None = Query(None, description="分类"),
+    root_cause: str | None = Query(None, description="问题根因"),
     title: str | None = Query(None, description="标题"),
     created_start: datetime | None = Query(None, description="创建时间开始"),
     created_end: datetime | None = Query(None, description="创建时间结束"),
@@ -103,6 +105,8 @@ async def list_ticket(
         q &= Q(status=status)
     if category:
         q &= Q(category__contains=category)
+    if root_cause:
+        q &= Q(root_cause__contains=root_cause)
     if title:
         q &= Q(title__contains=title)
     if created_start:
@@ -173,10 +177,19 @@ async def tech_action_ticket(payload: TicketTechActionIn):
         tech_id=user.id,
         action=payload.action,
         comment=payload.comment,
+        root_cause=payload.root_cause,
     )
 
     logger.info("[api.ticket.tech_action] success user_id={} ticket_id={} status={}", user.id, ticket.id, ticket.status)
     return Success(msg="处理成功", data=await ticket.to_dict())
+
+
+@router.get("/attachment/download", summary="下载工单附件", dependencies=[DependAuth])
+async def download_ticket_attachment(attachment_id: int = Query(..., description="附件ID")):
+    user = await _get_current_user()
+    role_names = await _get_user_role_names(user)
+    data = await ticket_controller.get_attachment_download(attachment_id=attachment_id, user=user, role_names=role_names)
+    return FileResponse(data["abs_path"], media_type=data["media_type"], filename=None, headers=data["headers"])
 
 
 @router.post("/resubmit", summary="重提工单", dependencies=[DependAuth])

@@ -27,12 +27,6 @@ const menuOptions = computed(() => {
   return permissionStore.menus.map((item) => getMenuItem(item)).sort((a, b) => a.order - b.order)
 })
 
-const menu = ref(null)
-watch(curRoute, async () => {
-  await nextTick()
-  menu.value?.showOption()
-})
-
 function resolvePath(basePath, path) {
   if (isExternal(path)) return path
   return (
@@ -95,14 +89,14 @@ function getIcon(meta) {
 }
 
 function handleMenuSelect(key, item) {
+  if (!item?.path) return
   if (isExternal(item.path)) {
     window.open(item.path)
   } else {
-    if (item.path === curRoute.path) {
-      appStore.reloadPage()
-    } else {
-      router.push(item.path)
-    }
+    if (item.path === curRoute.path) return
+    router.push(item.path).catch((error) => {
+      console.warn('[SideMenu] router.push failed', error)
+    })
   }
 }
 </script>

@@ -562,6 +562,7 @@ async def init_roles():
             "/api/v1/kb/document/create",
             "/api/v1/kb/document/upload",
             "/api/v1/kb/document/reparse",
+            "/api/v1/kb/document/process_pending",
             "/api/v1/kb/document/delete",
             "/api/v1/kb/session/list",
             "/api/v1/kb/session/create",

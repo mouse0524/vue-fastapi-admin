@@ -1,9 +1,9 @@
 <script setup>
 import { computed, onMounted, ref } from 'vue'
+import { useRouter } from 'vue-router'
 import { NButton, NForm, NFormItem, NInput, NSelect, NUpload, NAlert, NSpace, NTag } from 'naive-ui'
 import { getToken, isNullOrWhitespace } from '@/utils'
 import api from '@/api'
-import RichTextEditor from '@/components/editor/RichTextEditor.vue'
 
 defineOptions({ name: '提交工单' })
 
@@ -14,6 +14,7 @@ const pageDesc = computed(() =>
     ? '请尽量详细描述问题，客服审核后会转技术处理。'
     : '无需登录即可提交工单，我们会通过你填写的联系方式反馈处理进度。'
 )
+const router = useRouter()
 
 const formRef = ref(null)
 const uploadLoading = ref(false)
@@ -144,6 +145,10 @@ function submit() {
         await api.createPublicTicket(payload)
       }
       $message.success('工单已提交，我们会尽快处理并反馈进度')
+      if (isAuthed.value) {
+        await router.push({ path: '/ticket/my', query: { status: 'pending_review' } })
+        return
+      }
       resetForm()
       await fetchCaptcha()
       if (isAuthed.value) {
@@ -162,72 +167,164 @@ function submit() {
   <div class="ticket-submit-page">
     <div class="hero">
       <div class="hero-left">
+        <div class="eyebrow">Support Desk</div>
         <h2>{{ pageTitle }}</h2>
         <p>{{ pageDesc }}</p>
-        <NSpace>
+        <NSpace class="hero-tags">
           <NTag class="hero-tag" :bordered="false">客服审核</NTag>
           <NTag class="hero-tag" :bordered="false">技术处理</NTag>
           <NTag class="hero-tag" :bordered="false">状态可追踪</NTag>
         </NSpace>
       </div>
       <div class="hero-right">
+        <div class="hero-stat-card">
+          <span class="stat-label">建议内容</span>
+          <strong>现象 + 复现 + 影响</strong>
+          <span class="stat-tip">越完整，处理越快</span>
+        </div>
         <div class="orb orb-a"></div>
         <div class="orb orb-b"></div>
       </div>
     </div>
 
-    <div class="form-shell">
-      <NAlert type="info" class="mb-16">
-        提交后我们将按工单状态推进处理。请确保邮箱和手机号可联系。
-      </NAlert>
+    <div class="content-grid">
+      <div class="form-shell">
+        <NAlert type="info" class="mb-16">
+          提交后我们将按工单状态推进处理。请确保邮箱和手机号可联系。
+        </NAlert>
 
-      <NForm ref="formRef" :model="form" :rules="rules" :label-width="100" label-placement="left">
-        <NFormItem label="公司名称" path="company_name">
-          <NInput v-model:value="form.company_name" placeholder="请输入公司名称" />
-        </NFormItem>
-        <NFormItem label="联系人" path="contact_name">
-          <div class="row-fill">
-            <NInput v-model:value="form.contact_name" placeholder="请输入联系人" />
-            <NButton v-if="isAuthed" type="default" @click="quickFill">一键填充</NButton>
+        <NForm ref="formRef" :model="form" :rules="rules" :label-width="100" label-placement="left">
+          <div class="section-card">
+            <div class="section-head">
+              <div>
+                <h3>联系信息</h3>
+                <p>用于客服回访、结果通知与工单状态同步。</p>
+              </div>
+              <NButton v-if="isAuthed" quaternary type="primary" @click="quickFill">一键填充</NButton>
+            </div>
+            <div class="form-grid two-col">
+              <NFormItem label="公司名称" path="company_name">
+                <NInput v-model:value="form.company_name" placeholder="请输入公司名称" />
+              </NFormItem>
+              <NFormItem label="联系人" path="contact_name">
+                <NInput v-model:value="form.contact_name" placeholder="请输入联系人" />
+              </NFormItem>
+              <NFormItem label="邮箱" path="email">
+                <NInput v-model:value="form.email" placeholder="请输入邮箱" />
+              </NFormItem>
+              <NFormItem label="手机号" path="phone">
+                <NInput v-model:value="form.phone" placeholder="请输入手机号" />
+              </NFormItem>
+            </div>
           </div>
-        </NFormItem>
-        <NFormItem label="邮箱" path="email">
-          <NInput v-model:value="form.email" placeholder="请输入邮箱" />
-        </NFormItem>
-        <NFormItem label="手机号" path="phone">
-          <NInput v-model:value="form.phone" placeholder="请输入手机号" />
-        </NFormItem>
-        <NFormItem label="问题分类" path="category">
-          <NSelect v-model:value="form.category" :options="categoryOptions" placeholder="请选择分类" />
-        </NFormItem>
-        <NFormItem label="问题标题" path="title">
-          <NInput v-model:value="form.title" placeholder="例如：用户导入报错 500" />
-        </NFormItem>
-        <NFormItem label="问题描述" path="description">
-          <div class="editor-host">
-            <RichTextEditor
-              v-model="form.description"
-              placeholder="建议包含问题现象、复现步骤、影响范围"
-              :min-height="220"
-              :max-height="460"
-            />
+
+          <div class="section-card">
+            <div class="section-head compact">
+              <div>
+                <h3>问题内容</h3>
+                <p>清楚描述问题场景，能大幅减少来回确认时间。</p>
+              </div>
+            </div>
+            <div class="form-grid single-col">
+              <NFormItem label="问题分类" path="category">
+                <NSelect v-model:value="form.category" :options="categoryOptions" placeholder="请选择分类" />
+              </NFormItem>
+              <NFormItem label="问题标题" path="title">
+                <NInput v-model:value="form.title" placeholder="例如：用户导入报错 500" />
+              </NFormItem>
+              <NFormItem label="问题描述" path="description">
+                <div class="editor-host">
+                  <NInput
+                    v-model:value="form.description"
+                    type="textarea"
+                    :autosize="{ minRows: 10, maxRows: 18 }"
+                    placeholder="建议包含问题现象、复现步骤、影响范围"
+                  />
+                </div>
+              </NFormItem>
+            </div>
           </div>
-        </NFormItem>
-        <NFormItem label="附件">
-          <NUpload :default-upload="false" :custom-request="customUpload" :max="5" @remove="handleRemove">
-            <NButton :loading="uploadLoading">上传附件</NButton>
-          </NUpload>
-        </NFormItem>
-        <NFormItem label="验证码" path="captcha_code">
-          <div class="captcha-row">
-            <NInput v-model:value="form.captcha_code" placeholder="请输入验证码" style="width: 180px" />
-            <img :src="captchaImage" alt="captcha" class="captcha-img" @click="fetchCaptcha" />
+
+          <div class="section-card">
+            <div class="section-head compact">
+              <div>
+                <h3>附件与校验</h3>
+                <p>截图、日志、报错文件有助于快速定位问题。</p>
+              </div>
+            </div>
+            <div class="form-grid single-col">
+              <NFormItem label="附件">
+                <div class="upload-box">
+                  <NUpload :default-upload="false" :custom-request="customUpload" :max="5" @remove="handleRemove">
+                    <NButton class="upload-btn" :loading="uploadLoading">上传附件</NButton>
+                  </NUpload>
+                  <span class="upload-tip">支持最多 5 个附件，建议上传截图、日志或复现文件。</span>
+                </div>
+              </NFormItem>
+              <NFormItem label="验证码" path="captcha_code">
+                <div class="captcha-row">
+                  <NInput v-model:value="form.captcha_code" placeholder="请输入验证码" style="width: 180px" />
+                  <img :src="captchaImage" alt="captcha" class="captcha-img" @click="fetchCaptcha" />
+                  <NButton text type="primary" @click="fetchCaptcha">换一张</NButton>
+                </div>
+              </NFormItem>
+            </div>
           </div>
-        </NFormItem>
-        <NFormItem>
-          <NButton class="submit-btn" type="primary" :loading="submitting" @click="submit">提交工单</NButton>
-        </NFormItem>
-      </NForm>
+
+          <NFormItem>
+            <div class="submit-row">
+              <NButton class="submit-btn" type="primary" :loading="submitting" @click="submit">提交工单</NButton>
+              <span class="submit-tip">提交后将进入客服审核流程，处理进度可在工单中心查看。</span>
+            </div>
+          </NFormItem>
+        </NForm>
+      </div>
+
+      <aside class="side-panel">
+        <div class="panel-card highlight">
+          <div class="panel-kicker">填写建议</div>
+          <h3>提高处理效率的 3 个关键点</h3>
+          <ul>
+            <li>写清问题现象，例如报错提示、出现频率、是否必现。</li>
+            <li>补充复现步骤，例如谁操作、在哪个页面、点了什么按钮。</li>
+            <li>说明影响范围，例如是否影响全部用户、是否阻塞业务。</li>
+          </ul>
+        </div>
+
+        <div class="panel-card process-card">
+          <div class="panel-kicker">处理流程</div>
+          <div class="step-item">
+            <span class="step-index">01</span>
+            <div>
+              <strong>提交工单</strong>
+              <p>提交问题内容与附件，系统立即生成编号。</p>
+            </div>
+          </div>
+          <div class="step-item">
+            <span class="step-index">02</span>
+            <div>
+              <strong>客服审核</strong>
+              <p>确认问题归类与信息完整度，不完整会回退补充。</p>
+            </div>
+          </div>
+          <div class="step-item">
+            <span class="step-index">03</span>
+            <div>
+              <strong>技术处理</strong>
+              <p>技术同学跟进分析与修复，状态全程可追踪。</p>
+            </div>
+          </div>
+        </div>
+
+        <div class="panel-card checklist-card">
+          <div class="panel-kicker">提交前确认</div>
+          <NSpace vertical size="small">
+            <NTag class="check-tag" :bordered="false">联系方式可用</NTag>
+            <NTag class="check-tag" :bordered="false">问题标题明确</NTag>
+            <NTag class="check-tag" :bordered="false">附件已补充</NTag>
+          </NSpace>
+        </div>
+      </aside>
     </div>
   </div>
 </template>
@@ -240,9 +337,9 @@ function submit() {
   overflow-y: auto;
   max-height: calc(100vh - 90px);
   background:
-    radial-gradient(circle at 12% 10%, rgba(244, 81, 30, 0.08), transparent 44%),
-    radial-gradient(circle at 88% 20%, rgba(249, 115, 22, 0.07), transparent 42%),
-    linear-gradient(180deg, #f5f7fb 0%, #f7f9fc 100%);
+    radial-gradient(circle at 12% 10%, rgba(244, 81, 30, 0.1), transparent 44%),
+    radial-gradient(circle at 88% 20%, rgba(249, 115, 22, 0.09), transparent 42%),
+    linear-gradient(180deg, #f6f7fb 0%, #f8fafc 100%);
 }
 
 .hero {
@@ -262,15 +359,29 @@ function submit() {
   overflow: hidden;
 }
 
+.eyebrow {
+  display: inline-flex;
+  align-items: center;
+  margin-bottom: 10px;
+  padding: 6px 10px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.14);
+  font-size: 12px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
 .hero-left h2 {
   margin: 0;
-  font-size: 28px;
+  font-size: 30px;
   line-height: 1.2;
 }
 
 .hero-left p {
-  margin: 10px 0 14px;
+  max-width: 560px;
+  margin: 10px 0 16px;
   opacity: 0.92;
+  font-size: 15px;
 }
 
 .hero-tag {
@@ -278,8 +389,14 @@ function submit() {
   background: rgba(255, 255, 255, 0.14);
 }
 
+.hero-tags {
+  flex-wrap: wrap;
+}
+
 .submit-btn {
-  min-width: 120px;
+  min-width: 136px;
+  height: 42px;
+  border-radius: 999px;
 }
 
 .submit-btn :deep(.n-button__border),
@@ -302,8 +419,34 @@ function submit() {
 
 .hero-right {
   position: relative;
-  width: 180px;
-  height: 90px;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  width: 260px;
+  height: 120px;
+}
+
+.hero-stat-card {
+  position: relative;
+  z-index: 2;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 16px 18px;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 16px;
+  backdrop-filter: blur(10px);
+  background: rgba(255, 255, 255, 0.12);
+}
+
+.hero-stat-card strong {
+  font-size: 16px;
+}
+
+.stat-label,
+.stat-tip {
+  font-size: 12px;
+  opacity: 0.88;
 }
 
 .orb {
@@ -315,7 +458,7 @@ function submit() {
 .orb-a {
   width: 120px;
   height: 120px;
-  right: -20px;
+  right: -18px;
   top: -18px;
   background: rgba(255, 255, 255, 0.2);
 }
@@ -328,24 +471,71 @@ function submit() {
   background: rgba(255, 255, 255, 0.26);
 }
 
-.form-shell {
+.content-grid {
   margin-top: 20px;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 320px;
+  gap: 20px;
+  align-items: start;
+}
+
+.form-shell {
   border-radius: 18px;
   padding: 24px;
   background: #fff;
   box-shadow: 0 10px 26px rgba(9, 30, 66, 0.08);
 }
 
-.row-fill {
+.section-card {
+  margin-bottom: 18px;
+  padding: 18px 18px 6px;
+  border: 1px solid #eef2f7;
+  border-radius: 18px;
+  background: linear-gradient(180deg, #ffffff 0%, #fbfcfe 100%);
+}
+
+.section-head {
   display: flex;
-  gap: 12px;
-  width: 100%;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 14px;
+}
+
+.section-head h3 {
+  margin: 0;
+  font-size: 17px;
+  color: #111827;
+}
+
+.section-head p {
+  margin: 6px 0 0;
+  color: #6b7280;
+  font-size: 13px;
+}
+
+.section-head.compact {
+  margin-bottom: 10px;
+}
+
+.form-grid {
+  display: grid;
+  gap: 2px 18px;
+}
+
+.form-grid.two-col {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.form-grid.single-col {
+  grid-template-columns: minmax(0, 1fr);
 }
 
 .captcha-row {
   display: flex;
   align-items: center;
   gap: 12px;
+  flex-wrap: wrap;
 }
 
 .captcha-img {
@@ -357,6 +547,111 @@ function submit() {
 
 .editor-host {
   width: 100%;
+}
+
+.upload-box {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  width: 100%;
+}
+
+.upload-btn {
+  width: fit-content;
+}
+
+.upload-tip,
+.submit-tip {
+  color: #6b7280;
+  font-size: 13px;
+}
+
+.submit-row {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  flex-wrap: wrap;
+}
+
+.side-panel {
+  position: sticky;
+  top: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.panel-card {
+  padding: 18px;
+  border-radius: 18px;
+  background: #fff;
+  border: 1px solid #eef2f7;
+  box-shadow: 0 10px 24px rgba(15, 23, 42, 0.06);
+}
+
+.panel-card h3 {
+  margin: 0 0 12px;
+  font-size: 18px;
+  color: #111827;
+}
+
+.panel-kicker {
+  margin-bottom: 8px;
+  color: #c2410c;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.highlight {
+  background:
+    radial-gradient(circle at top right, rgba(251, 146, 60, 0.14), transparent 35%),
+    linear-gradient(180deg, #fffaf5 0%, #ffffff 100%);
+}
+
+.highlight ul {
+  margin: 0;
+  padding-left: 18px;
+  color: #4b5563;
+  line-height: 1.8;
+}
+
+.step-item {
+  display: flex;
+  gap: 12px;
+  margin-bottom: 14px;
+}
+
+.step-item:last-child {
+  margin-bottom: 0;
+}
+
+.step-item p {
+  margin: 4px 0 0;
+  color: #6b7280;
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+.step-index {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  border-radius: 12px;
+  background: #fef2f2;
+  color: #c2410c;
+  font-size: 12px;
+  font-weight: 700;
+  flex-shrink: 0;
+}
+
+.check-tag {
+  width: fit-content;
+  color: #374151;
+  background: #f3f4f6;
 }
 
 @media (max-width: 900px) {
@@ -372,12 +667,20 @@ function submit() {
     display: none;
   }
 
+  .content-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .side-panel {
+    position: static;
+  }
+
   .form-shell {
     padding: 16px;
   }
 
-  .row-fill {
-    flex-direction: column;
+  .form-grid.two-col {
+    grid-template-columns: minmax(0, 1fr);
   }
 }
 </style>

@@ -10,7 +10,6 @@ const isDark = useDark()
 export const useAppStore = defineStore('app', {
   state() {
     return {
-      reloadFlag: true,
       collapsed: false,
       fullScreen: true,
       /** keepAlive路由的key，重新赋值可重置keepAlive */
@@ -25,15 +24,7 @@ export const useAppStore = defineStore('app', {
   },
   actions: {
     async reloadPage() {
-      $loadingBar.start()
-      this.reloadFlag = false
-      await nextTick()
-      this.reloadFlag = true
-
-      setTimeout(() => {
-        document.documentElement.scrollTo({ left: 0, top: 0 })
-        $loadingBar.finish()
-      }, 100)
+      document.documentElement.scrollTo({ left: 0, top: 0 })
     },
     switchCollapsed() {
       this.collapsed = !this.collapsed

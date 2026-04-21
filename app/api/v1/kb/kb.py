@@ -64,6 +64,8 @@ async def kb_document_list(
     page_size: int = Query(10, description="每页数量"),
     space_id: int | None = Query(None, description="空间ID"),
     keyword: str | None = Query(None, description="关键字"),
+    parse_status: str | None = Query(None, description="解析状态"),
+    source_type: str | None = Query(None, description="来源类型"),
 ):
     user = await _current_user()
     total, rows = await kb_controller.list_documents(
@@ -71,6 +73,8 @@ async def kb_document_list(
         page_size=page_size,
         space_id=space_id,
         keyword=keyword,
+        parse_status=parse_status,
+        source_type=source_type,
         owner_id=user.id,
         is_admin=user.is_superuser,
     )
@@ -90,6 +94,17 @@ async def kb_document_reparse(document_id: int = Query(..., description="文档I
     user = await _current_user()
     doc = await kb_controller.reparse_document(document_id=document_id, owner_id=user.id, is_admin=user.is_superuser)
     return Success(msg="重解析完成", data=doc)
+
+
+@router.post("/document/process_pending", summary="处理待解析知识文档")
+async def kb_document_process_pending(document_id: int | None = Query(None, description="文档ID，不传则处理全部待解析")):
+    user = await _current_user()
+    data = await kb_controller.process_pending_documents(
+        owner_id=user.id,
+        is_admin=user.is_superuser,
+        document_id=document_id,
+    )
+    return Success(msg="待解析文档处理完成", data=data)
 
 
 @router.post("/document/delete", summary="删除知识文档")

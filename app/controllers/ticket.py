@@ -6,9 +6,11 @@ from fastapi import HTTPException, UploadFile
 from tortoise.expressions import Q
 
 from app.log import logger
+from app.controllers.system_setting import system_setting_controller
 from app.models.admin import Ticket, TicketActionLog, TicketAttachment, User
 from app.models.enums import TicketActionType, TicketStatus
 from app.settings import settings
+from app.utils.http_headers import build_download_content_disposition
 
 
 class TicketController:
@@ -122,7 +124,7 @@ class TicketController:
         return ticket
 
     async def set_tech_action(
-        self, *, ticket_id: int, tech_id: int, action: TicketActionType, comment: str | None
+        self, *, ticket_id: int, tech_id: int, action: TicketActionType, comment: str | None, root_cause: str | None
     ) -> Ticket:
         logger.info(
             "[ticket.tech_action] start ticket_id={} tech_id={} action={} comment={}",
@@ -138,6 +140,17 @@ class TicketController:
         if action not in {TicketActionType.TECH_START, TicketActionType.TECH_REJECT, TicketActionType.FINISH}:
             raise HTTPException(status_code=400, detail="不支持的技术操作")
 
+        if action == TicketActionType.FINISH:
+            setting = await system_setting_controller.get_public_config()
+            root_causes = setting.get("ticket_root_causes") or []
+            normalized_root_cause = (root_cause or "").strip()
+            if not normalized_root_cause:
+                raise HTTPException(status_code=400, detail="处理完成时必须选择问题根因")
+            if root_causes and normalized_root_cause not in root_causes:
+                raise HTTPException(status_code=400, detail="问题根因不合法，请刷新页面后重试")
+        else:
+            normalized_root_cause = None
+
         old_status = ticket.status
         if action == TicketActionType.TECH_REJECT:
             ticket.status = TicketStatus.PENDING_REVIEW
@@ -145,6 +158,7 @@ class TicketController:
         elif action == TicketActionType.FINISH:
             ticket.status = TicketStatus.DONE
             ticket.reject_reason = None
+            ticket.root_cause = normalized_root_cause
             ticket.finished_at = datetime.now()
         else:
             ticket.status = TicketStatus.TECH_PROCESSING
@@ -267,6 +281,38 @@ class TicketController:
         submitter = await User.filter(id=ticket.submitter_id).first()
         data["submitter_name"] = submitter.username if submitter else ""
         return data
+
+    async def get_attachment_download(self, *, attachment_id: int, user: User, role_names: list[str]) -> dict:
+        attachment = await TicketAttachment.filter(id=attachment_id).first()
+        if not attachment:
+            raise HTTPException(status_code=404, detail="附件不存在")
+        if not attachment.ticket_id:
+            raise HTTPException(status_code=400, detail="附件尚未绑定工单")
+
+        ticket = await Ticket.filter(id=attachment.ticket_id).first()
+        if not ticket:
+            raise HTTPException(status_code=404, detail="所属工单不存在")
+
+        if not user.is_superuser and "管理员" not in role_names and "客服" not in role_names:
+            if "技术" in role_names:
+                if ticket.submitter_id != user.id and ticket.tech_id != user.id:
+                    raise HTTPException(status_code=403, detail="无权限下载该附件")
+            elif ticket.submitter_id != user.id:
+                raise HTTPException(status_code=403, detail="无权限下载该附件")
+
+        abs_path = os.path.abspath(os.path.join(settings.UPLOAD_DIR, attachment.file_path))
+        upload_root = os.path.abspath(settings.UPLOAD_DIR)
+        if not abs_path.startswith(upload_root):
+            raise HTTPException(status_code=400, detail="附件路径非法")
+        if not os.path.exists(abs_path):
+            raise HTTPException(status_code=404, detail="附件文件不存在")
+
+        return {
+            "abs_path": abs_path,
+            "filename": attachment.origin_name or os.path.basename(attachment.file_path),
+            "media_type": attachment.mime_type or "application/octet-stream",
+            "headers": {"Content-Disposition": build_download_content_disposition(attachment.origin_name or "download")},
+        }
 
 
 ticket_controller = TicketController()

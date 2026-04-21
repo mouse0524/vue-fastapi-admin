@@ -35,6 +35,7 @@ const form = ref({
   site_logo: '',
   allow_partner_register: true,
   ticket_categories: ['登录问题', '权限问题', '系统异常', '其他'],
+  ticket_root_causes: ['代码缺陷', '配置错误', '环境异常', '数据问题', '操作不当', '第三方依赖'],
   smtp_host: '',
   smtp_port: 465,
   smtp_username: '',
@@ -260,6 +261,9 @@ function applyPresetHtmlTemplates() {
             <NCard size="small" title="工单分类">
               <NFormItem label="问题分类" path="ticket_categories">
                 <NDynamicTags v-model:value="form.ticket_categories" />
+              </NFormItem>
+              <NFormItem label="问题根因" path="ticket_root_causes">
+                <NDynamicTags v-model:value="form.ticket_root_causes" />
               </NFormItem>
             </NCard>
           </NTabPane>

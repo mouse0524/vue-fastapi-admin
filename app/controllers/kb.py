@@ -1,4 +1,6 @@
 from datetime import datetime
+import hashlib
+import io
 import os
 import uuid
 
@@ -13,11 +15,65 @@ from app.settings import settings
 
 class KbController:
     @staticmethod
+    def _file_hash(data: bytes) -> str:
+        return hashlib.sha256(data).hexdigest()
+
+    @staticmethod
     def _parse_text_content(filename: str, data: bytes) -> str | None:
         ext = os.path.splitext(filename or "")[1].lower()
         if ext in {".txt", ".md", ".log", ".csv", ".json"}:
             return data.decode("utf-8", errors="ignore")
+        if ext == ".pdf":
+            try:
+                from pypdf import PdfReader
+
+                reader = PdfReader(io.BytesIO(data))
+                text = "\n".join((page.extract_text() or "") for page in reader.pages).strip()
+                return text or None
+            except Exception:
+                return None
+        if ext == ".docx":
+            try:
+                from docx import Document
+
+                document = Document(io.BytesIO(data))
+                text = "\n".join(p.text for p in document.paragraphs if p.text).strip()
+                return text or None
+            except Exception:
+                return None
         return None
+
+    async def _rebuild_document_chunks(self, doc: KbDocument, text_content: str, *, source: str, file_name: str | None) -> None:
+        await KbChunk.filter(document_id=doc.id).delete()
+        await KbChunk.create(
+            space_id=doc.space_id,
+            document_id=doc.id,
+            chunk_index=0,
+            content=text_content,
+            token_count=max(1, len(text_content) // 2),
+            metadata_json={"source": source, "file_name": file_name},
+        )
+
+    async def _parse_pending_document(self, doc: KbDocument) -> dict:
+        abs_path = os.path.join(settings.UPLOAD_DIR, doc.storage_path or "")
+        if not doc.storage_path or not os.path.isfile(abs_path):
+            doc.parse_status = "failed"
+            doc.parse_error = "源文件不存在"
+            await doc.save()
+            return await doc.to_dict()
+
+        with open(abs_path, "rb") as f:
+            data = f.read()
+        text_content = self._parse_text_content(doc.file_name or doc.title, data)
+        if text_content:
+            await self._rebuild_document_chunks(doc, text_content, source="reparse", file_name=doc.file_name)
+            doc.parse_status = "success"
+            doc.parse_error = None
+        else:
+            doc.parse_status = "pending"
+            doc.parse_error = "当前文件类型待异步解析"
+        await doc.save()
+        return await doc.to_dict()
 
     async def list_spaces(self, *, page: int, page_size: int, keyword: str | None, owner_id: int, is_admin: bool):
         q = Q(status=True)
@@ -54,6 +110,8 @@ class KbController:
         page_size: int,
         space_id: int | None,
         keyword: str | None,
+        parse_status: str | None,
+        source_type: str | None,
         owner_id: int,
         is_admin: bool,
     ):
@@ -62,6 +120,10 @@ class KbController:
             q &= Q(space_id=space_id)
         if keyword:
             q &= Q(title__contains=keyword)
+        if parse_status:
+            q &= Q(parse_status=parse_status)
+        if source_type:
+            q &= Q(source_type=source_type)
         if not is_admin:
             owned_space_ids = await KbSpace.filter(Q(owner_id=owner_id) | Q(is_public=True)).values_list("id", flat=True)
             if not owned_space_ids:
@@ -81,14 +143,36 @@ class KbController:
             raise HTTPException(status_code=403, detail="无权限向该空间写入文档")
 
         content = payload.pop("content")
+        content_bytes = content.encode("utf-8")
+        content_hash = self._file_hash(content_bytes)
+        existing = await KbDocument.filter(space_id=space.id, file_hash=content_hash, is_deleted=False).first()
+        if existing:
+            data = await existing.to_dict()
+            data["reused"] = True
+            return data
+
         now = datetime.now().strftime("%Y%m%d%H%M%S")
         title = payload.get("title")
+        rel_dir = os.path.join("kb", "manual", str(space.id))
+        abs_dir = os.path.join(settings.UPLOAD_DIR, rel_dir)
+        os.makedirs(abs_dir, exist_ok=True)
+        filename = f"{now}_{uuid.uuid4().hex[:8]}.txt"
+        rel_path = os.path.join(rel_dir, filename).replace("\\", "/")
+        abs_path = os.path.join(settings.UPLOAD_DIR, rel_path)
+        with open(abs_path, "w", encoding="utf-8") as f:
+            f.write(content)
+
         obj = await KbDocument.create(
             created_by=owner_id,
             parse_status="success",
+            parse_error=None,
             file_name=title,
             file_ext=".txt",
-            storage_path=f"kb/manual/{space.id}/{now}.txt",
+            file_size=len(content_bytes),
+            file_hash=content_hash,
+            storage_path=rel_path,
+            version=1,
+            is_deleted=False,
             **payload,
         )
         await KbChunk.create(
@@ -99,7 +183,9 @@ class KbController:
             token_count=max(1, len(content) // 2),
             metadata_json={"source": "manual"},
         )
-        return await obj.to_dict()
+        data = await obj.to_dict()
+        data["reused"] = False
+        return data
 
     async def upload_document(
         self,
@@ -126,6 +212,13 @@ class KbController:
         data = await file.read()
         if len(data) > settings.MAX_UPLOAD_SIZE:
             raise HTTPException(status_code=400, detail="文件大小超限")
+        file_hash = self._file_hash(data)
+
+        existing = await KbDocument.filter(space_id=space_id, file_hash=file_hash, is_deleted=False).first()
+        if existing:
+            data = await existing.to_dict()
+            data["reused"] = True
+            return data
 
         now = datetime.now()
         rel_dir = os.path.join("kb", now.strftime("%Y"), now.strftime("%m"), now.strftime("%d"))
@@ -151,7 +244,7 @@ class KbController:
             file_name=filename,
             file_ext=ext,
             file_size=len(data),
-            file_hash=None,
+            file_hash=file_hash,
             storage_path=rel_path,
             parse_status=parse_status,
             parse_error=parse_error,
@@ -160,15 +253,10 @@ class KbController:
             created_by=owner_id,
         )
         if text_content:
-            await KbChunk.create(
-                space_id=space_id,
-                document_id=obj.id,
-                chunk_index=0,
-                content=text_content,
-                token_count=max(1, len(text_content) // 2),
-                metadata_json={"source": "upload", "file_name": filename},
-            )
-        return await obj.to_dict()
+            await self._rebuild_document_chunks(obj, text_content, source="upload", file_name=filename)
+        data = await obj.to_dict()
+        data["reused"] = False
+        return data
 
     async def reparse_document(self, *, document_id: int, owner_id: int, is_admin: bool) -> dict:
         doc = await KbDocument.filter(id=document_id, is_deleted=False).first()
@@ -180,35 +268,7 @@ class KbController:
             raise HTTPException(status_code=404, detail="所属空间不存在")
         if not is_admin and not (doc.created_by == owner_id or space.owner_id == owner_id):
             raise HTTPException(status_code=403, detail="无权限重解析该文档")
-
-        abs_path = os.path.join(settings.UPLOAD_DIR, doc.storage_path or "")
-        if not doc.storage_path or not os.path.isfile(abs_path):
-            doc.parse_status = "failed"
-            doc.parse_error = "源文件不存在"
-            await doc.save()
-            return await doc.to_dict()
-
-        with open(abs_path, "rb") as f:
-            data = f.read()
-        text_content = self._parse_text_content(doc.file_name or doc.title, data)
-        await KbChunk.filter(document_id=doc.id).delete()
-
-        if text_content:
-            await KbChunk.create(
-                space_id=doc.space_id,
-                document_id=doc.id,
-                chunk_index=0,
-                content=text_content,
-                token_count=max(1, len(text_content) // 2),
-                metadata_json={"source": "reparse", "file_name": doc.file_name},
-            )
-            doc.parse_status = "success"
-            doc.parse_error = None
-        else:
-            doc.parse_status = "pending"
-            doc.parse_error = "当前文件类型待异步解析"
-        await doc.save()
-        return await doc.to_dict()
+        return await self._parse_pending_document(doc)
 
     async def delete_document(self, *, document_id: int, owner_id: int, is_admin: bool) -> dict:
         doc = await KbDocument.filter(id=document_id, is_deleted=False).first()
@@ -358,6 +418,34 @@ class KbController:
         total = await query.count()
         rows = await query.offset((page - 1) * page_size).limit(page_size)
         return total, rows
+
+    async def process_pending_documents(self, *, owner_id: int, is_admin: bool, document_id: int | None = None) -> dict:
+        q = Q(is_deleted=False) & Q(parse_status="pending")
+        if document_id:
+            q &= Q(id=document_id)
+        if not is_admin:
+            q &= Q(created_by=owner_id)
+
+        docs = await KbDocument.filter(q).order_by("id")
+        total = len(docs)
+        success = 0
+        failed = 0
+        data = []
+        for doc in docs:
+            result = await self._parse_pending_document(doc)
+            data.append(result)
+            if result.get("parse_status") == "success":
+                success += 1
+            elif result.get("parse_status") == "failed":
+                failed += 1
+
+        return {
+            "total": total,
+            "success": success,
+            "failed": failed,
+            "pending": max(0, total - success - failed),
+            "items": data,
+        }
 
     async def test_llm_connectivity(self) -> dict:
         result = await llm_gateway.chat(question="连通性测试", contexts=["系统连通性检测"], model=settings.KB_DEFAULT_MODEL)
