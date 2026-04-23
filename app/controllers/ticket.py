@@ -1,6 +1,7 @@
 import os
 import uuid
 from datetime import datetime
+from mimetypes import guess_type
 
 from fastapi import HTTPException, UploadFile
 from tortoise.expressions import Q
@@ -14,9 +15,34 @@ from app.utils.http_headers import build_download_content_disposition
 
 
 class TicketController:
+    _FILE_SIGNATURES: dict[str, list[bytes]] = {
+        "png": [b"\x89PNG\r\n\x1a\n"],
+        "jpg": [b"\xff\xd8\xff"],
+        "jpeg": [b"\xff\xd8\xff"],
+        "gif": [b"GIF87a", b"GIF89a"],
+        "zip": [b"PK\x03\x04", b"PK\x05\x06", b"PK\x07\x08"],
+        "rar": [b"Rar!\x1a\x07\x00", b"Rar!\x1a\x07\x01\x00"],
+    }
+
     @staticmethod
     def _next_ticket_no() -> str:
         return f"TK{datetime.now().strftime('%Y%m%d%H%M%S')}{uuid.uuid4().hex[:6].upper()}"
+
+    @classmethod
+    def _detect_file_type(cls, data: bytes) -> str | None:
+        for ext, signatures in cls._FILE_SIGNATURES.items():
+            if any(data.startswith(signature) for signature in signatures):
+                return ext
+        return None
+
+    @staticmethod
+    def _normalize_extensions(items: list[str] | None) -> list[str]:
+        normalized: list[str] = []
+        for item in items or []:
+            value = str(item or "").strip().lower().lstrip(".")
+            if value and value not in normalized:
+                normalized.append(value)
+        return normalized
 
     async def _write_action(
         self,
@@ -38,7 +64,13 @@ class TicketController:
         )
 
     async def create_ticket(self, *, submitter_id: int, payload: dict) -> Ticket:
-        logger.info("[ticket.create] start submitter_id={} category={} title={}", submitter_id, payload.get("category"), payload.get("title"))
+        logger.info(
+            "[ticket.create] start submitter_id={} project_phase={} category={} title={}",
+            submitter_id,
+            payload.get("project_phase"),
+            payload.get("category"),
+            payload.get("title"),
+        )
         attachment_ids = payload.pop("attachment_ids", [])
         ticket = await Ticket.create(
             ticket_no=self._next_ticket_no(),
@@ -232,21 +264,37 @@ class TicketController:
 
     async def upload_attachment(self, *, uploader_id: int, file: UploadFile) -> TicketAttachment:
         logger.info("[ticket.upload] start uploader_id={} filename={} content_type={}", uploader_id, file.filename, file.content_type)
-        ext = os.path.splitext(file.filename or "")[1].lower()
-        if ext not in settings.ALLOWED_EXTENSIONS:
-            raise HTTPException(status_code=400, detail="不支持的文件类型")
+        filename = (file.filename or "").strip()
+        if not filename:
+            raise HTTPException(status_code=400, detail="文件名不能为空")
+
+        ext = os.path.splitext(filename)[1].lower().lstrip(".")
+        config = await system_setting_controller.get_public_config()
+        allowed_extensions = self._normalize_extensions(config.get("ticket_attachment_extensions"))
+        if not allowed_extensions:
+            allowed_extensions = self._normalize_extensions([item.lstrip(".") for item in settings.ALLOWED_EXTENSIONS])
+        if ext not in allowed_extensions:
+            raise HTTPException(status_code=400, detail=f"不支持的文件类型，仅允许：{', '.join(allowed_extensions)}")
 
         data = await file.read()
         if len(data) > settings.MAX_UPLOAD_SIZE:
             raise HTTPException(status_code=400, detail="文件大小超限")
+
+        detected_ext = self._detect_file_type(data)
+        if not detected_ext:
+            raise HTTPException(status_code=400, detail="无法识别文件真实类型，请上传受支持的标准文件")
+        if detected_ext != ext:
+            raise HTTPException(status_code=400, detail=f"文件内容与扩展名不匹配，检测到真实类型为 {detected_ext}")
+        if detected_ext not in allowed_extensions:
+            raise HTTPException(status_code=400, detail=f"检测到的真实文件类型 {detected_ext} 未被允许上传")
 
         now = datetime.now()
         rel_dir = os.path.join("tickets", now.strftime("%Y"), now.strftime("%m"), now.strftime("%d"))
         abs_dir = os.path.join(settings.UPLOAD_DIR, rel_dir)
         os.makedirs(abs_dir, exist_ok=True)
 
-        filename = f"{uuid.uuid4().hex}{ext}"
-        rel_path = os.path.join(rel_dir, filename).replace("\\", "/")
+        stored_name = f"{uuid.uuid4().hex}.{ext}"
+        rel_path = os.path.join(rel_dir, stored_name).replace("\\", "/")
         abs_path = os.path.join(settings.UPLOAD_DIR, rel_path)
 
         with open(abs_path, "wb") as f:
@@ -254,10 +302,10 @@ class TicketController:
 
         attachment = await TicketAttachment.create(
             ticket_id=None,
-            origin_name=file.filename or filename,
+            origin_name=filename,
             file_path=rel_path,
             file_size=len(data),
-            mime_type=file.content_type or "application/octet-stream",
+            mime_type=guess_type(filename)[0] or file.content_type or "application/octet-stream",
             uploader_id=uploader_id,
         )
         logger.info(

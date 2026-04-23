@@ -42,7 +42,13 @@ async def upload_ticket_attachment(file: UploadFile = File(...)):
 @router.post("/create", summary="提交工单", dependencies=[DependAuth])
 async def create_ticket(payload: TicketCreate):
     user = await _get_current_user()
-    logger.info("[api.ticket.create] request user_id={} title={} category={}", user.id, payload.title, payload.category)
+    logger.info(
+        "[api.ticket.create] request user_id={} title={} project_phase={} category={}",
+        user.id,
+        payload.title,
+        payload.project_phase,
+        payload.category,
+    )
     role_names = await _get_user_role_names(user)
     if not user.is_superuser and not any(role in role_names for role in ["用户", "渠道商", "代理商", "技术", "管理员"]):
         return Fail(code=403, msg="您当前账号暂无提交工单权限，请联系管理员")
@@ -62,7 +68,10 @@ async def create_ticket(payload: TicketCreate):
         return Fail(code=400, msg="验证码错误或已失效，请重试")
 
     config = await system_setting_controller.get_public_config()
+    project_phases = config.get("ticket_project_phases") or []
     categories = config.get("ticket_categories") or []
+    if project_phases and payload.project_phase not in project_phases:
+        return Fail(code=400, msg="项目阶段已更新，请刷新页面后重新选择")
     if categories and payload.category not in categories:
         return Fail(code=400, msg="问题分类已更新，请刷新页面后重新选择")
 
@@ -89,6 +98,7 @@ async def list_ticket(
     page: int = Query(1, description="页码"),
     page_size: int = Query(10, description="每页数量"),
     status: TicketStatus | None = Query(None, description="状态"),
+    project_phase: str | None = Query(None, description="项目阶段"),
     category: str | None = Query(None, description="分类"),
     root_cause: str | None = Query(None, description="问题根因"),
     title: str | None = Query(None, description="标题"),
@@ -103,6 +113,8 @@ async def list_ticket(
     q = Q()
     if status:
         q &= Q(status=status)
+    if project_phase:
+        q &= Q(project_phase__contains=project_phase)
     if category:
         q &= Q(category__contains=category)
     if root_cause:

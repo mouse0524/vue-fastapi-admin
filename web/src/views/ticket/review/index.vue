@@ -21,6 +21,7 @@ const pendingReviewRow = ref(null)
 const reviewComment = ref('')
 const rootCauseOptions = ref([])
 const categoryOptions = ref([])
+const projectPhaseOptions = ref([])
 const quickFilters = [
   { label: '待审核', value: 'pending_review' },
   { label: '已驳回', value: 'cs_rejected' },
@@ -44,7 +45,17 @@ onMounted(() => {
   $table.value?.handleSearch()
   loadCategoryOptions()
   loadRootCauseOptions()
+  loadProjectPhaseOptions()
 })
+
+async function loadProjectPhaseOptions() {
+  try {
+    const res = await api.getSystemSettings()
+    projectPhaseOptions.value = (res?.data?.ticket_project_phases || []).map((item) => ({ label: item, value: item }))
+  } catch (error) {
+    projectPhaseOptions.value = []
+  }
+}
 
 async function loadCategoryOptions() {
   try {
@@ -104,6 +115,7 @@ const columns = [
   { title: '工单编号', key: 'ticket_no', align: 'center' },
   { title: '提交人', key: 'submitter_id', align: 'center' },
   { title: '标题', key: 'title', align: 'center', ellipsis: { tooltip: true } },
+  { title: '项目阶段', key: 'project_phase', align: 'center' },
   { title: '分类', key: 'category', align: 'center' },
   { title: '问题根因', key: 'root_cause', align: 'center', ellipsis: { tooltip: true } },
   {
@@ -202,6 +214,9 @@ const columns = [
             </QueryBarItem>
             <QueryBarItem label="分类" :label-width="40">
               <NSelect v-model:value="queryItems.category" :options="categoryOptions" clearable placeholder="选择分类" />
+            </QueryBarItem>
+            <QueryBarItem label="阶段" :label-width="40">
+              <NSelect v-model:value="queryItems.project_phase" :options="projectPhaseOptions" clearable placeholder="选择阶段" />
             </QueryBarItem>
             <QueryBarItem label="状态" :label-width="40">
               <NSelect v-model:value="queryItems.status" :options="ticketStatusOptions" clearable placeholder="选择状态" />

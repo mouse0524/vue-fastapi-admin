@@ -247,12 +247,14 @@ import { lStorage, setToken } from '@/utils'
 import api from '@/api'
 import { addDynamicRoutes } from '@/router'
 import { useI18n } from 'vue-i18n'
-import { useAppStore } from '@/store'
+import { useAppStore, usePermissionStore, useUserStore } from '@/store'
 
 const router = useRouter()
 const { query } = useRoute()
 const { t } = useI18n({ useScope: 'global' })
 const appStore = useAppStore()
+const permissionStore = usePermissionStore()
+const userStore = useUserStore()
 
 const loginInfo = ref({
   username: '',
@@ -341,6 +343,63 @@ function initLoginInfo() {
 }
 
 const loading = ref(false)
+
+function normalizeRedirectPath(value) {
+  if (Array.isArray(value)) return value[0] || ''
+  return typeof value === 'string' ? value : ''
+}
+
+function isUsableRoute(path) {
+  if (!path) return false
+  const resolved = router.resolve(path)
+  return resolved.matched.length > 0 && resolved.path !== '/404'
+}
+
+function getDefaultLoginPath() {
+  const roleNames = (userStore.role || []).map((item) => item?.name).filter(Boolean)
+  const configuredPaths = []
+  const configItems = Array.isArray(appStore.roleHomePages) ? appStore.roleHomePages : []
+
+  if (userStore.isSuperUser) {
+    configuredPaths.push('/system/user')
+  }
+
+  roleNames.forEach((roleName) => {
+    configItems.forEach((item) => {
+      if (item?.role_name === roleName && item?.path) {
+        configuredPaths.push(item.path)
+      }
+    })
+  })
+
+  const fallbackPaths = userStore.isSuperUser
+    ? ['/system/user', '/workbench']
+    : roleNames.includes('管理员')
+      ? ['/system/user', '/system/settings', '/workbench']
+      : roleNames.includes('客服')
+        ? ['/ticket/review', '/partner/review', '/workbench']
+        : roleNames.includes('技术')
+          ? ['/ticket/tech', '/ticket/my', '/workbench']
+          : roleNames.includes('用户') || roleNames.includes('渠道商')
+            ? ['/ticket/my', '/workbench']
+            : ['/workbench']
+
+  const preferredPaths = [...new Set([...configuredPaths, ...fallbackPaths])]
+
+  for (const path of preferredPaths) {
+    if (isUsableRoute(path)) return path
+  }
+
+  const visibleMenus = permissionStore.menus || []
+  for (const route of visibleMenus) {
+    if (route?.path && route.path !== '/login' && route.path !== '/404' && isUsableRoute(route.path)) {
+      return route.path
+    }
+  }
+
+  return '/workbench'
+}
+
 async function handleLogin() {
   const { username, password } = loginInfo.value
   const captchaCode = loginInfo.value.captcha_code?.trim()
@@ -369,13 +428,13 @@ async function handleLogin() {
     $message.success(t('views.login.message_login_success'))
     setToken(res.data.access_token)
     await addDynamicRoutes()
-    if (query.redirect) {
-      const path = query.redirect
-      console.log('path', { path, query })
+    const redirectPath = normalizeRedirectPath(query.redirect)
+    const targetPath = isUsableRoute(redirectPath) ? redirectPath : getDefaultLoginPath()
+    if (redirectPath) {
       Reflect.deleteProperty(query, 'redirect')
-      router.push({ path, query })
+      router.push({ path: targetPath, query })
     } else {
-      router.push('/')
+      router.push(targetPath)
     }
   } catch (e) {
     console.error('login error', e.error)

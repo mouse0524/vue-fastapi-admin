@@ -22,7 +22,13 @@ async def upload_public_ticket_attachment(file: UploadFile = File(...)):
 
 @router.post("/create", summary="游客提交工单")
 async def create_public_ticket(payload: TicketCreate):
-    logger.info("[api.public_ticket.create] request email={} category={} title={}", payload.email, payload.category, payload.title)
+    logger.info(
+        "[api.public_ticket.create] request email={} project_phase={} category={} title={}",
+        payload.email,
+        payload.project_phase,
+        payload.category,
+        payload.title,
+    )
     pending = await partner_controller.has_pending_registration(email=payload.email, phone=payload.phone)
     if pending:
         return Fail(code=403, msg="当前账号存在待审核注册申请，暂不允许提交工单")
@@ -33,7 +39,10 @@ async def create_public_ticket(payload: TicketCreate):
         return Fail(code=400, msg="验证码错误或已过期")
 
     config = await system_setting_controller.get_public_config()
+    project_phases = config.get("ticket_project_phases") or []
     categories = config.get("ticket_categories") or []
+    if project_phases and payload.project_phase not in project_phases:
+        return Fail(code=400, msg="项目阶段不合法，请刷新页面后重试")
     if categories and payload.category not in categories:
         return Fail(code=400, msg="问题分类不合法，请刷新页面后重试")
 

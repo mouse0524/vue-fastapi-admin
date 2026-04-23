@@ -1,9 +1,10 @@
 from datetime import datetime, timedelta, timezone
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Request
 from fastapi.responses import FileResponse
 
 from app.log import logger
+from app.controllers.login_security import login_security_controller
 from app.controllers.user import user_controller
 from app.controllers.captcha import captcha_controller
 from app.controllers.mail import mail_controller
@@ -24,15 +25,69 @@ from app.utils.password import get_password_hash, verify_password
 router = APIRouter()
 
 
+def _get_client_ip(request: Request) -> str:
+    forwarded_for = request.headers.get("x-forwarded-for")
+    if forwarded_for:
+        return forwarded_for.split(",")[0].strip()
+    real_ip = request.headers.get("x-real-ip")
+    if real_ip:
+        return real_ip.strip()
+    if request.client and request.client.host:
+        return request.client.host
+    return "unknown"
+
+
+def _format_lock_message(ttl_seconds: int) -> str:
+    minutes = max(1, (ttl_seconds + 59) // 60)
+    return f"登录失败次数过多，请 {minutes} 分钟后重试"
+
+
+def _login_error_message(config: dict, fallback: str) -> str:
+    if config.get("login_generic_error_enabled", True):
+        return "用户名、密码或验证码错误"
+    return fallback
+
+
 @router.post("/access_token", summary="获取token")
-async def login_access_token(credentials: CredentialsSchema):
+async def login_access_token(credentials: CredentialsSchema, request: Request):
     logger.info("[api.login] start username={}", credentials.username)
+    client_ip = _get_client_ip(request)
+    config = await system_setting_controller.get_public_config()
+
+    decision = await login_security_controller.check_lock(username=credentials.username, ip=client_ip)
+    if decision.locked:
+        logger.warning(
+            "[api.login] locked username={} ip={} scope={} ttl_seconds={}",
+            credentials.username,
+            client_ip,
+            decision.scope,
+            decision.ttl_seconds,
+        )
+        return Fail(code=423, msg=_format_lock_message(decision.ttl_seconds))
+
     valid = await captcha_controller.verify_captcha(credentials.captcha_id, credentials.captcha_code)
     if not valid:
         logger.warning("[api.login] captcha_invalid username={} captcha_id={}", credentials.username, credentials.captcha_id)
-        return Fail(code=400, msg=f"登录验证码错误或已过期（最多{settings.CAPTCHA_MAX_RETRY}次）")
+        fail_result = await login_security_controller.record_failure(username=credentials.username, ip=client_ip)
+        if fail_result.locked:
+            return Fail(code=423, msg=_format_lock_message(fail_result.ttl_seconds))
+        return Fail(code=400, msg=_login_error_message(config, f"登录验证码错误或已过期（最多{settings.CAPTCHA_MAX_RETRY}次）"))
 
-    user: User = await user_controller.authenticate(credentials)
+    try:
+        user: User = await user_controller.authenticate(credentials)
+    except Exception as exc:
+        fail_result = await login_security_controller.record_failure(username=credentials.username, ip=client_ip)
+        if fail_result.locked:
+            logger.warning(
+                "[api.login] lock_triggered username={} ip={} scope={}",
+                credentials.username,
+                client_ip,
+                fail_result.scope,
+            )
+            return Fail(code=423, msg=_format_lock_message(fail_result.ttl_seconds))
+        return Fail(code=400, msg=_login_error_message(config, str(getattr(exc, "detail", "登录失败"))))
+
+    await login_security_controller.clear_success(username=credentials.username, ip=client_ip)
     await user_controller.update_last_login(user.id)
     access_token_expires = timedelta(minutes=settings.JWT_ACCESS_TOKEN_EXPIRE_MINUTES)
     expire = datetime.now(timezone.utc) + access_token_expires

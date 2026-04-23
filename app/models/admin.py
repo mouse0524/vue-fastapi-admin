@@ -97,6 +97,7 @@ class Ticket(BaseModel, TimestampMixin):
     contact_name = fields.CharField(max_length=60, description="联系人")
     email = fields.CharField(max_length=255, description="邮箱", index=True)
     phone = fields.CharField(max_length=20, description="手机号", index=True)
+    project_phase = fields.CharField(max_length=30, description="项目阶段", index=True)
     category = fields.CharField(max_length=60, description="问题分类", index=True)
     title = fields.CharField(max_length=200, description="问题标题", index=True)
     description = fields.TextField(description="问题描述")
@@ -158,8 +159,34 @@ class SystemSetting(BaseModel, TimestampMixin):
     site_title = fields.CharField(max_length=120, default="Vue FastAPI Admin", description="网站标题")
     site_logo = fields.CharField(max_length=500, null=True, description="网站Logo")
     allow_partner_register = fields.BooleanField(default=True, description="是否开放代理商注册")
+    ticket_attachment_extensions = fields.JSONField(default=["zip", "rar", "png", "jpg", "gif"], description="工单附件允许上传类型")
+    ticket_project_phases = fields.JSONField(default=["售前", "实施", "售后"], description="工单项目阶段")
     ticket_categories = fields.JSONField(default=["登录问题", "权限问题", "系统异常", "其他"], description="工单分类")
     ticket_root_causes = fields.JSONField(default=["代码缺陷", "配置错误", "环境异常", "数据问题", "操作不当", "第三方依赖"], description="工单问题根因")
+    ticket_description_templates = fields.JSONField(
+        default=[
+            "问题现象：\n复现步骤：\n期望结果：\n实际结果：\n影响范围：",
+            "发生时间：\n操作账号：\n所属模块：\n错误提示：\n已尝试方案：",
+        ],
+        description="工单问题描述模板",
+    )
+    role_home_pages = fields.JSONField(
+        default=[
+            {"role_name": "管理员", "path": "/system/user"},
+            {"role_name": "客服", "path": "/ticket/review"},
+            {"role_name": "技术", "path": "/ticket/tech"},
+            {"role_name": "用户", "path": "/ticket/my"},
+            {"role_name": "渠道商", "path": "/ticket/my"},
+        ],
+        description="角色默认首页配置",
+    )
+    login_security_enabled = fields.BooleanField(default=True, description="是否启用登录安全策略")
+    login_account_ip_fail_limit = fields.IntField(default=5, description="账号+IP失败锁定阈值")
+    login_account_ip_lock_minutes = fields.IntField(default=60, description="账号+IP锁定时长(分钟)")
+    login_ip_fail_limit = fields.IntField(default=20, description="IP失败锁定阈值")
+    login_ip_lock_minutes = fields.IntField(default=60, description="IP锁定时长(分钟)")
+    login_fail_window_minutes = fields.IntField(default=60, description="登录失败统计窗口(分钟)")
+    login_generic_error_enabled = fields.BooleanField(default=True, description="是否启用统一登录错误提示")
 
     smtp_host = fields.CharField(max_length=120, null=True, description="SMTP主机")
     smtp_port = fields.IntField(default=465, description="SMTP端口")

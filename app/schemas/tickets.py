@@ -11,6 +11,7 @@ class TicketCreate(BaseModel):
     contact_name: str = Field(..., description="联系人")
     email: EmailStr = Field(..., description="邮箱")
     phone: str = Field(..., description="手机号")
+    project_phase: str = Field(..., description="项目阶段")
     category: str = Field(..., description="问题分类")
     title: str = Field(..., description="问题标题")
     description: str = Field(..., description="问题描述")
@@ -51,6 +52,7 @@ class TicketListQuery(BaseModel):
     page: int = 1
     page_size: int = 10
     status: Optional[TicketStatus] = None
+    project_phase: Optional[str] = None
     category: Optional[str] = None
     title: Optional[str] = None
     submitter_id: Optional[int] = None

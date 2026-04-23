@@ -1,9 +1,10 @@
 <script setup>
-import { computed, onMounted, ref } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { NButton, NForm, NFormItem, NInput, NSelect, NUpload, NAlert, NSpace, NTag } from 'naive-ui'
 import { getToken, isNullOrWhitespace } from '@/utils'
 import api from '@/api'
+import RichTextEditor from '@/components/editor/RichTextEditor.vue'
 
 defineOptions({ name: '提交工单' })
 
@@ -21,12 +22,28 @@ const uploadLoading = ref(false)
 const submitting = ref(false)
 const captchaImage = ref('')
 const uploadedAttachmentIds = ref([])
+const attachmentAccept = ref('.zip,.rar,.png,.jpg,.gif')
+const projectPhaseOptions = ref([
+  { label: '售前', value: '售前' },
+  { label: '实施', value: '实施' },
+  { label: '售后', value: '售后' },
+])
+const descriptionTemplateOptions = ref([])
+
+function buildTemplateLabel(value, index) {
+  const plainText = String(value || '')
+    .replace(/<[^>]+>/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+  return plainText ? `模板${index + 1} · ${plainText.slice(0, 12)}` : `模板${index + 1}`
+}
 
 const form = ref({
   company_name: '',
   contact_name: '',
   email: '',
   phone: '',
+  project_phase: '',
   category: '',
   title: '',
   description: '',
@@ -46,11 +63,19 @@ const rules = {
   contact_name: { required: true, message: '请输入联系人', trigger: ['blur', 'input'] },
   email: { required: true, message: '请输入邮箱', trigger: ['blur', 'input'] },
   phone: { required: true, message: '请输入手机号', trigger: ['blur', 'input'] },
+  project_phase: { required: true, message: '请选择项目阶段', trigger: ['change'] },
   category: { required: true, message: '请选择分类', trigger: ['change'] },
   title: { required: true, message: '请输入标题', trigger: ['blur', 'input'] },
   description: { required: true, message: '请输入问题描述', trigger: ['blur', 'input'] },
   captcha_code: { required: true, message: '请输入验证码', trigger: ['blur', 'input'] },
 }
+
+watch(descriptionTemplateOptions, (options) => {
+  if (!options.length) return
+  if (!form.value.description || !form.value.description.trim() || options.every((item) => item.value !== form.value.description)) {
+    form.value.description = options[0].value
+  }
+})
 
 onMounted(async () => {
   await Promise.all([fetchPublicConfig(), fetchCaptcha()])
@@ -62,12 +87,28 @@ onMounted(async () => {
 async function fetchPublicConfig() {
   try {
     const res = await api.getPublicConfig()
+    const projectPhases = res.data?.ticket_project_phases || []
     const categories = res.data?.ticket_categories || []
+    const descriptionTemplates = res.data?.ticket_description_templates || []
+    const attachmentExtensions = res.data?.ticket_attachment_extensions || []
+    if (projectPhases.length > 0) {
+      projectPhaseOptions.value = projectPhases.map((item) => ({ label: item, value: item }))
+      if (!form.value.project_phase) {
+        form.value.project_phase = projectPhaseOptions.value[0].value
+      }
+    }
     if (categories.length > 0) {
       categoryOptions.value = categories.map((item) => ({ label: item, value: item }))
       if (!form.value.category) {
         form.value.category = categoryOptions.value[0].value
       }
+    }
+    descriptionTemplateOptions.value = descriptionTemplates.map((item, index) => ({
+      label: buildTemplateLabel(item, index),
+      value: item,
+    }))
+    if (attachmentExtensions.length > 0) {
+      attachmentAccept.value = attachmentExtensions.map((item) => `.${String(item).replace(/^\./, '')}`).join(',')
     }
   } catch (error) {
     console.error('fetchPublicConfig error', error)
@@ -96,6 +137,11 @@ function quickFill() {
   fetchPrefill()
 }
 
+function applyDescriptionTemplate(value) {
+  if (!value) return
+  form.value.description = value
+}
+
 async function customUpload({ file, onFinish, onError }) {
   try {
     uploadLoading.value = true
@@ -121,9 +167,10 @@ function resetForm() {
     contact_name: '',
     email: '',
     phone: '',
+    project_phase: projectPhaseOptions.value[0]?.value || '',
     category: categoryOptions.value[0]?.value || '',
     title: '',
-    description: '',
+    description: descriptionTemplateOptions.value[0]?.value || '',
     captcha_id: keepCaptchaId,
     captcha_code: '',
   }
@@ -226,6 +273,9 @@ function submit() {
               </div>
             </div>
             <div class="form-grid single-col">
+              <NFormItem label="项目阶段" path="project_phase">
+                <NSelect v-model:value="form.project_phase" :options="projectPhaseOptions" placeholder="请选择项目阶段" />
+              </NFormItem>
               <NFormItem label="问题分类" path="category">
                 <NSelect v-model:value="form.category" :options="categoryOptions" placeholder="请选择分类" />
               </NFormItem>
@@ -234,11 +284,25 @@ function submit() {
               </NFormItem>
               <NFormItem label="问题描述" path="description">
                 <div class="editor-host">
-                  <NInput
-                    v-model:value="form.description"
-                    type="textarea"
-                    :autosize="{ minRows: 10, maxRows: 18 }"
+                  <div v-if="descriptionTemplateOptions.length" class="template-toolbar">
+                    <span class="template-label">描述模板</span>
+                    <NSpace size="small">
+                      <NButton
+                        v-for="item in descriptionTemplateOptions"
+                        :key="item.value"
+                        size="small"
+                        secondary
+                        @click="applyDescriptionTemplate(item.value)"
+                      >
+                        {{ item.label }}
+                      </NButton>
+                    </NSpace>
+                  </div>
+                  <RichTextEditor
+                    v-model="form.description"
                     placeholder="建议包含问题现象、复现步骤、影响范围"
+                    :min-height="240"
+                    :max-height="520"
                   />
                 </div>
               </NFormItem>
@@ -255,10 +319,10 @@ function submit() {
             <div class="form-grid single-col">
               <NFormItem label="附件">
                 <div class="upload-box">
-                  <NUpload :default-upload="false" :custom-request="customUpload" :max="5" @remove="handleRemove">
+                  <NUpload :default-upload="false" :custom-request="customUpload" :max="5" :accept="attachmentAccept" @remove="handleRemove">
                     <NButton class="upload-btn" :loading="uploadLoading">上传附件</NButton>
                   </NUpload>
-                  <span class="upload-tip">支持最多 5 个附件，建议上传截图、日志或复现文件。</span>
+                  <span class="upload-tip">支持最多 5 个附件，当前允许类型：{{ attachmentAccept }}。</span>
                 </div>
               </NFormItem>
               <NFormItem label="验证码" path="captcha_code">
@@ -340,6 +404,20 @@ function submit() {
     radial-gradient(circle at 12% 10%, rgba(244, 81, 30, 0.1), transparent 44%),
     radial-gradient(circle at 88% 20%, rgba(249, 115, 22, 0.09), transparent 42%),
     linear-gradient(180deg, #f6f7fb 0%, #f8fafc 100%);
+}
+
+.template-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 12px;
+}
+
+.template-label {
+  color: #6b7280;
+  font-size: 12px;
+  font-weight: 600;
 }
 
 .hero {

@@ -11,6 +11,7 @@ import {
   NInput,
   NInputNumber,
   NModal,
+  NSelect,
   NSwitch,
   NTabPane,
   NTabs,
@@ -30,12 +31,25 @@ const llmTesting = ref(false)
 const logoUploading = ref(false)
 const previewVisible = ref(false)
 const appStore = useAppStore()
+const roleOptions = ref([])
+const menuOptions = ref([])
 const form = ref({
   site_title: 'Vue FastAPI Admin',
   site_logo: '',
   allow_partner_register: true,
+  ticket_attachment_extensions: ['zip', 'rar', 'png', 'jpg', 'gif'],
+  ticket_project_phases: ['售前', '实施', '售后'],
   ticket_categories: ['登录问题', '权限问题', '系统异常', '其他'],
   ticket_root_causes: ['代码缺陷', '配置错误', '环境异常', '数据问题', '操作不当', '第三方依赖'],
+  ticket_description_templates: ['问题现象：\n复现步骤：\n期望结果：\n实际结果：\n影响范围：'],
+  role_home_pages: [],
+  login_security_enabled: true,
+  login_account_ip_fail_limit: 5,
+  login_account_ip_lock_minutes: 60,
+  login_ip_fail_limit: 20,
+  login_ip_lock_minutes: 60,
+  login_fail_window_minutes: 60,
+  login_generic_error_enabled: true,
   smtp_host: '',
   smtp_port: 465,
   smtp_username: '',
@@ -117,11 +131,106 @@ const rules = {
     },
     trigger: ['change', 'blur'],
   },
+  ticket_project_phases: {
+    required: true,
+    validator: () => {
+      if (!form.value.ticket_project_phases || form.value.ticket_project_phases.length === 0) {
+        return new Error('请至少配置一个项目阶段')
+      }
+      return true
+    },
+    trigger: ['change', 'blur'],
+  },
+  ticket_attachment_extensions: {
+    required: true,
+    validator: () => {
+      const items = (form.value.ticket_attachment_extensions || []).filter((item) => String(item || '').trim())
+      if (items.length === 0) {
+        return new Error('请至少配置一个允许上传类型')
+      }
+      return true
+    },
+    trigger: ['change', 'blur'],
+  },
+  ticket_root_causes: {
+    required: true,
+    validator: () => {
+      const items = (form.value.ticket_root_causes || []).filter((item) => String(item || '').trim())
+      if (items.length === 0) {
+        return new Error('请至少配置一个问题根因')
+      }
+      return true
+    },
+    trigger: ['change', 'blur'],
+  },
+  ticket_description_templates: {
+    required: true,
+    validator: () => {
+      const items = (form.value.ticket_description_templates || []).filter((item) => String(item || '').trim())
+      if (items.length === 0) {
+        return new Error('请至少配置一个问题描述模板')
+      }
+      return true
+    },
+    trigger: ['change', 'blur'],
+  },
+  role_home_pages: {
+    validator: () => {
+      const items = form.value.role_home_pages || []
+      const roleNames = items.map((item) => String(item?.role_name || '').trim()).filter(Boolean)
+      const paths = items.map((item) => String(item?.path || '').trim()).filter(Boolean)
+      if (roleNames.length !== items.length || paths.length !== items.length) {
+        return new Error('角色默认首页必须完整选择角色和页面')
+      }
+      if (new Set(roleNames).size !== roleNames.length) {
+        return new Error('同一个角色只能配置一个默认首页')
+      }
+      return true
+    },
+    trigger: ['change', 'blur'],
+  },
+  login_account_ip_fail_limit: { required: true, type: 'number', min: 1, message: '请输入正确的账号+IP失败阈值', trigger: ['blur', 'change'] },
+  login_account_ip_lock_minutes: { required: true, type: 'number', min: 1, message: '请输入正确的账号+IP锁定时长', trigger: ['blur', 'change'] },
+  login_ip_fail_limit: { required: true, type: 'number', min: 1, message: '请输入正确的IP失败阈值', trigger: ['blur', 'change'] },
+  login_ip_lock_minutes: { required: true, type: 'number', min: 1, message: '请输入正确的IP锁定时长', trigger: ['blur', 'change'] },
+  login_fail_window_minutes: { required: true, type: 'number', min: 1, message: '请输入正确的失败统计窗口', trigger: ['blur', 'change'] },
 }
 
 onMounted(() => {
   loadData()
+  loadRoleOptions()
+  loadMenuOptions()
 })
+
+async function loadRoleOptions() {
+  try {
+    const res = await api.getRoleList({ page: 1, page_size: 9999 })
+    roleOptions.value = (res.data || []).map((item) => ({ label: item.name, value: item.name }))
+  } catch (error) {
+    roleOptions.value = []
+  }
+}
+
+async function loadMenuOptions() {
+  try {
+    const res = await api.getMenus({ page: 1, page_size: 9999 })
+    menuOptions.value = (res.data || [])
+      .flatMap((item) => {
+        const children = Array.isArray(item.children) ? item.children : []
+        if (children.length > 0) {
+          return children
+            .filter((child) => child.component && child.path)
+            .map((child) => ({ label: `${item.name} / ${child.name} (${child.component})`, value: child.path }))
+        }
+        if (item.component && item.path) {
+          return [{ label: `${item.name} (${item.component})`, value: item.path }]
+        }
+        return []
+      })
+  } catch (error) {
+    menuOptions.value = []
+  }
+}
 
 async function loadData() {
   try {
@@ -130,9 +239,19 @@ async function loadData() {
     form.value = {
       ...form.value,
       ...res.data,
+      ticket_attachment_extensions: res.data?.ticket_attachment_extensions?.length
+        ? res.data.ticket_attachment_extensions
+        : form.value.ticket_attachment_extensions,
+      ticket_project_phases: res.data?.ticket_project_phases?.length
+        ? res.data.ticket_project_phases
+        : form.value.ticket_project_phases,
       ticket_categories: res.data?.ticket_categories?.length
         ? res.data.ticket_categories
         : form.value.ticket_categories,
+      ticket_description_templates: Array.isArray(res.data?.ticket_description_templates)
+        ? res.data.ticket_description_templates
+        : form.value.ticket_description_templates,
+      role_home_pages: Array.isArray(res.data?.role_home_pages) ? res.data.role_home_pages : form.value.role_home_pages,
     }
     const publicRes = await api.getPublicConfig()
     appStore.setSiteConfig(publicRes.data || {})
@@ -216,6 +335,31 @@ function openPreview() {
   previewVisible.value = true
 }
 
+function addDescriptionTemplate() {
+  form.value.ticket_description_templates.push('')
+}
+
+function removeDescriptionTemplate(index) {
+  if ((form.value.ticket_description_templates || []).length <= 1) {
+    $message.warning('至少保留一个问题描述模板')
+    return
+  }
+  form.value.ticket_description_templates.splice(index, 1)
+}
+
+function addRoleHomePage() {
+  const usedRoles = new Set((form.value.role_home_pages || []).map((item) => item.role_name).filter(Boolean))
+  const nextRole = roleOptions.value.find((item) => !usedRoles.has(item.value))
+  form.value.role_home_pages.push({ role_name: '', path: '' })
+  if (nextRole) {
+    form.value.role_home_pages[form.value.role_home_pages.length - 1].role_name = nextRole.value
+  }
+}
+
+function removeRoleHomePage(index) {
+  form.value.role_home_pages.splice(index, 1)
+}
+
 function applyPresetHtmlTemplates() {
   form.value.email_verify_subject = presetTemplates.verifySubject
   form.value.email_verify_template = presetTemplates.verifyHtml
@@ -259,11 +403,78 @@ function applyPresetHtmlTemplates() {
 
           <NTabPane name="ticket" tab="工单配置">
             <NCard size="small" title="工单分类">
+              <NFormItem label="附件类型" path="ticket_attachment_extensions">
+                <NDynamicTags v-model:value="form.ticket_attachment_extensions" />
+              </NFormItem>
+              <NFormItem label="项目阶段" path="ticket_project_phases">
+                <NDynamicTags v-model:value="form.ticket_project_phases" />
+              </NFormItem>
               <NFormItem label="问题分类" path="ticket_categories">
                 <NDynamicTags v-model:value="form.ticket_categories" />
               </NFormItem>
               <NFormItem label="问题根因" path="ticket_root_causes">
                 <NDynamicTags v-model:value="form.ticket_root_causes" />
+              </NFormItem>
+              <NFormItem label="问题描述模板" path="ticket_description_templates">
+                <div class="template-editor">
+                  <div v-for="(item, index) in form.ticket_description_templates" :key="index" class="template-item">
+                    <NInput
+                      v-model:value="form.ticket_description_templates[index]"
+                      type="textarea"
+                      :autosize="{ minRows: 3, maxRows: 6 }"
+                      :placeholder="`模板 ${index + 1}`"
+                    />
+                    <NButton quaternary type="error" @click="removeDescriptionTemplate(index)">删除</NButton>
+                  </div>
+                  <NButton dashed @click="addDescriptionTemplate">新增模板</NButton>
+                </div>
+              </NFormItem>
+              <NFormItem label="角色默认首页">
+                <div class="template-editor">
+                  <div v-for="(item, index) in form.role_home_pages" :key="index" class="home-page-item">
+                    <NSelect
+                      v-model:value="form.role_home_pages[index].role_name"
+                      :options="roleOptions.filter((option) => option.value === item.role_name || !form.role_home_pages.some((entry, entryIndex) => entryIndex !== index && entry.role_name === option.value))"
+                      placeholder="选择角色"
+                    />
+                    <NSelect
+                      v-model:value="form.role_home_pages[index].path"
+                      :options="menuOptions"
+                      placeholder="选择默认页面"
+                    />
+                    <NButton quaternary type="error" @click="removeRoleHomePage(index)">删除</NButton>
+                  </div>
+                  <NButton dashed @click="addRoleHomePage">新增角色首页</NButton>
+                </div>
+              </NFormItem>
+            </NCard>
+          </NTabPane>
+
+          <NTabPane name="login-security" tab="登录安全">
+            <NCard size="small" title="登录失败锁定策略">
+              <NAlert type="info" class="mb-12">
+                推荐开启双层锁定：账号+IP 连续失败达到阈值后锁定，同时对异常来源 IP 做更高阈值拦截。
+              </NAlert>
+              <NFormItem label="启用登录安全">
+                <NSwitch v-model:value="form.login_security_enabled" />
+              </NFormItem>
+              <NFormItem label="账号+IP失败阈值" path="login_account_ip_fail_limit">
+                <NInputNumber v-model:value="form.login_account_ip_fail_limit" :min="1" :max="20" />
+              </NFormItem>
+              <NFormItem label="账号+IP锁定(分钟)" path="login_account_ip_lock_minutes">
+                <NInputNumber v-model:value="form.login_account_ip_lock_minutes" :min="1" :max="1440" />
+              </NFormItem>
+              <NFormItem label="IP失败阈值" path="login_ip_fail_limit">
+                <NInputNumber v-model:value="form.login_ip_fail_limit" :min="1" :max="200" />
+              </NFormItem>
+              <NFormItem label="IP锁定(分钟)" path="login_ip_lock_minutes">
+                <NInputNumber v-model:value="form.login_ip_lock_minutes" :min="1" :max="1440" />
+              </NFormItem>
+              <NFormItem label="统计窗口(分钟)" path="login_fail_window_minutes">
+                <NInputNumber v-model:value="form.login_fail_window_minutes" :min="1" :max="1440" />
+              </NFormItem>
+              <NFormItem label="统一错误提示">
+                <NSwitch v-model:value="form.login_generic_error_enabled" />
               </NFormItem>
             </NCard>
           </NTabPane>
@@ -488,6 +699,34 @@ function applyPresetHtmlTemplates() {
 </template>
 
 <style scoped>
+.template-editor {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.template-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+}
+
+.home-page-item {
+  display: grid;
+  grid-template-columns: minmax(160px, 220px) minmax(240px, 1fr) auto;
+  gap: 12px;
+  align-items: start;
+}
+
+.template-item :deep(.n-input) {
+  flex: 1;
+}
+
+.home-page-item :deep(.n-base-selection) {
+  width: 100%;
+}
+
 .preview-html {
   width: 100%;
   min-height: 80px;

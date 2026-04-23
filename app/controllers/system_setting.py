@@ -41,8 +41,19 @@ class SystemSettingController:
             "site_title": data.get("site_title"),
             "site_logo": logo_url,
             "allow_partner_register": data.get("allow_partner_register"),
+            "ticket_attachment_extensions": data.get("ticket_attachment_extensions") or [],
+            "ticket_project_phases": data.get("ticket_project_phases") or [],
             "ticket_categories": data.get("ticket_categories") or [],
             "ticket_root_causes": data.get("ticket_root_causes") or [],
+            "ticket_description_templates": data.get("ticket_description_templates") or [],
+            "role_home_pages": data.get("role_home_pages") or [],
+            "login_security_enabled": data.get("login_security_enabled", True),
+            "login_account_ip_fail_limit": data.get("login_account_ip_fail_limit", 5),
+            "login_account_ip_lock_minutes": data.get("login_account_ip_lock_minutes", 60),
+            "login_ip_fail_limit": data.get("login_ip_fail_limit", 20),
+            "login_ip_lock_minutes": data.get("login_ip_lock_minutes", 60),
+            "login_fail_window_minutes": data.get("login_fail_window_minutes", 60),
+            "login_generic_error_enabled": data.get("login_generic_error_enabled", True),
         }
 
     async def test_webdav_connection(self, payload: dict | None = None) -> dict:

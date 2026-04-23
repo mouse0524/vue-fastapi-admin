@@ -67,6 +67,10 @@ function renderActionContent(item) {
         <strong>{{ ticket.contact_name || '-' }}</strong>
       </div>
       <div class="detail-card">
+        <span>项目阶段</span>
+        <strong>{{ ticket.project_phase || '-' }}</strong>
+      </div>
+      <div class="detail-card">
         <span>问题分类</span>
         <strong>{{ ticket.category || '-' }}</strong>
       </div>
