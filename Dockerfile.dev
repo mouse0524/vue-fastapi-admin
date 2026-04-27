@@ -24,7 +24,7 @@ COPY requirements.txt .
 RUN pip install -r requirements.txt -i https://pypi.tuna.tsinghua.edu.cn/simple
 
 # 复制配置文件
-COPY /deploy/entrypoint-dev.sh .
+COPY deploy/entrypoint-dev.sh .
 RUN chmod +x entrypoint-dev.sh
 
 ENV LANG=zh_CN.UTF-8
