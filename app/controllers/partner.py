@@ -12,6 +12,10 @@ from app.utils.password import get_password_hash
 
 class PartnerController:
     @staticmethod
+    async def _build_unique_username(email: str) -> str:
+        return email.strip().lower()
+
+    @staticmethod
     async def _build_unique_dept_name(raw_name: str, fallback_name: str) -> str:
         max_len = 20
         base = (raw_name or "").strip() or fallback_name
@@ -99,7 +103,7 @@ class PartnerController:
 
     async def register(self, payload: dict) -> PartnerRegistration:
         email = payload["email"].strip().lower()
-        username = email
+        username = await self._build_unique_username(email)
         phone = payload["phone"].strip()
         register_type = payload.get("register_type") or RegisterType.CHANNEL
         hardware_id = (payload.get("hardware_id") or "").strip() or None
@@ -169,6 +173,11 @@ class PartnerController:
 
         if approved:
             try:
+                username = register_obj.username
+                if not username or len(username) > 255:
+                    username = await self._build_unique_username(register_obj.email)
+                    register_obj.username = username
+
                 role_name = "渠道商" if register_obj.register_type == RegisterType.CHANNEL else "用户"
                 role = await Role.filter(name=role_name).first()
                 if not role and role_name == "渠道商":
@@ -178,7 +187,7 @@ class PartnerController:
 
                 if await User.filter(email=register_obj.email).exists():
                     raise HTTPException(status_code=400, detail="邮箱已被注册")
-                if await User.filter(username=register_obj.username).exists():
+                if await User.filter(username=username).exists():
                     raise HTTPException(status_code=400, detail="用户名已存在")
                 if await User.filter(phone=register_obj.phone).exists():
                     raise HTTPException(status_code=400, detail="手机号已被注册")
@@ -194,7 +203,7 @@ class PartnerController:
                 )
 
                 user = await User.create(
-                    username=register_obj.email,
+                    username=username,
                     company_name=register_obj.company_name,
                     email=register_obj.email,
                     phone=register_obj.phone,

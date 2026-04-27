@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Query
+from fastapi import APIRouter, HTTPException, Query
 from tortoise.expressions import Q
 
 from app.log import logger
@@ -44,7 +44,10 @@ async def partner_register(payload: PartnerRegisterIn):
         return Fail(code=400, msg="邮箱验证码错误或已失效，请重新获取后再提交")
 
     data = payload.model_dump()
-    register_obj = await partner_controller.register(data)
+    try:
+        register_obj = await partner_controller.register(data)
+    except HTTPException as exc:
+        return Fail(code=exc.status_code, msg=str(exc.detail))
     logger.info("[api.partner.register] success register_id={} email={}", register_obj.id, register_obj.email)
     return Success(msg="注册成功，请等待审核", data=await register_obj.to_dict(exclude_fields=["password_hash"]))
 

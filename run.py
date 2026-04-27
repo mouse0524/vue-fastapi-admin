@@ -13,4 +13,4 @@ if __name__ == "__main__":
     LOGGING_CONFIG["formatters"]["access"]["datefmt"] = "%Y-%m-%d %H:%M:%S"
 
     reload_flag = os.getenv("UVICORN_RELOAD", "0").lower() in {"1", "true", "yes", "on"}
-    uvicorn.run("app:app", host="0.0.0.0", port=9999, reload=reload_flag, log_config=LOGGING_CONFIG)
+    uvicorn.run("app:app", host="0.0.0.0", port=9999, reload=True, log_config=LOGGING_CONFIG)

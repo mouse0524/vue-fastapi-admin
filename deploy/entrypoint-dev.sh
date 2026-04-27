@@ -3,12 +3,7 @@ set -e
 
 # 进入前端目录安装依赖和启动开发服务器
 cd /opt/vue-fastapi-admin/web
-
-# 检查 node_modules 是否存在，如果不存在则安装依赖
-if [ ! -d "node_modules" ]; then
-    echo "Installing frontend dependencies..."
-    pnpm install
-fi
+pnpm install
 
 # 启动前端开发服务器（后台运行，监听 0.0.0.0 以便容器外访问）
 echo "Starting frontend development server on port 3100..."

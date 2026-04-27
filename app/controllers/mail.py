@@ -90,6 +90,14 @@ class MailController:
             _LOCAL_EMAIL_CODE_CACHE.pop(key, None)
         return is_valid
 
+    @staticmethod
+    def _normalize_code(code) -> str:
+        if code is None:
+            return ""
+        if isinstance(code, bytes):
+            code = code.decode("utf-8")
+        return str(code).strip()
+
     async def send_partner_verify_code(self, email: str) -> None:
         setting = await self._get_setting()
 
@@ -122,8 +130,8 @@ class MailController:
             saved = await execute_redis("get", key)
             if not saved:
                 return self._verify_local_code(email, code)
-            await execute_redis("delete", key)
-            if saved == code.strip():
+            if self._normalize_code(saved) == self._normalize_code(code):
+                await execute_redis("delete", key)
                 _LOCAL_EMAIL_CODE_CACHE.pop(email.lower().strip(), None)
                 return True
             return False
