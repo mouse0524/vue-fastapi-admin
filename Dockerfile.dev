@@ -19,7 +19,8 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked,id=core-apt \
     && corepack prepare pnpm@9.15.9 --activate \
     && pnpm config set registry https://registry.npmmirror.com
 
-# 安装 Python 依赖
+# 复制依赖文件并安装
+COPY requirements.txt .
 RUN pip install -r requirements.txt -i https://pypi.tuna.tsinghua.edu.cn/simple
 
 # 复制配置文件
