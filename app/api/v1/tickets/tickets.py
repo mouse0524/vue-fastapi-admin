@@ -114,11 +114,11 @@ async def list_ticket(
     if status:
         q &= Q(status=status)
     if project_phase:
-        q &= Q(project_phase__contains=project_phase)
+        q &= Q(project_phase=project_phase)
     if category:
-        q &= Q(category__contains=category)
+        q &= Q(category=category)
     if root_cause:
-        q &= Q(root_cause__contains=root_cause)
+        q &= Q(root_cause=root_cause)
     if title:
         q &= Q(title__contains=title)
     if created_start:
@@ -137,8 +137,7 @@ async def list_ticket(
             q &= Q(submitter_id=user.id)
 
     total, rows = await ticket_controller.list_tickets(page=page, page_size=page_size, search=q)
-    data = [await item.to_dict() for item in rows]
-    return SuccessExtra(data=data, total=total, page=page, page_size=page_size)
+    return SuccessExtra(data=rows, total=total, page=page, page_size=page_size)
 
 
 @router.get("/get", summary="工单详情", dependencies=[DependAuth])

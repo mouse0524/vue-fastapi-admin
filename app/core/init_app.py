@@ -1,11 +1,7 @@
-import shutil
-import glob
-import os
-
-from aerich import Command
 from fastapi import FastAPI
 from fastapi.middleware import Middleware
 from fastapi.middleware.cors import CORSMiddleware
+from tortoise import Tortoise
 from tortoise.expressions import Q
 
 from app.api import api_router
@@ -475,31 +471,8 @@ async def init_apis():
 
 
 async def init_db():
-    command = Command(tortoise_config=settings.TORTOISE_ORM)
-    try:
-        await command.init_db(safe=True)
-    except FileExistsError:
-        pass
-
-    await command.init()
-
-    migration_files = glob.glob(os.path.join("migrations", "models", "3_*.py"))
-    if len(migration_files) > 1:
-        migration_files.sort(key=os.path.getmtime, reverse=True)
-        keep = migration_files[0]
-        for file in migration_files[1:]:
-            try:
-                os.remove(file)
-                logger.warning(f"removed duplicated migration file: {file}, keep: {keep}")
-            except OSError:
-                pass
-
-    try:
-        await command.upgrade(run_in_transaction=True)
-    except AttributeError:
-        logger.warning("unable to retrieve model history from database, model history will be created from scratch")
-        shutil.rmtree("migrations")
-        await command.init_db(safe=True)
+    await Tortoise.init(config=settings.TORTOISE_ORM)
+    await Tortoise.generate_schemas(safe=True)
 
 
 async def init_roles():

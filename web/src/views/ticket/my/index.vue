@@ -43,35 +43,20 @@ const summaryCards = computed(() => {
 
 onMounted(() => {
   $table.value?.handleSearch()
-  loadCategoryOptions()
-  loadRootCauseOptions()
-  loadProjectPhaseOptions()
+  loadTicketMetaOptions()
 })
 
-async function loadProjectPhaseOptions() {
+async function loadTicketMetaOptions() {
   try {
     const res = await api.getSystemSettings()
-    projectPhaseOptions.value = (res?.data?.ticket_project_phases || []).map((item) => ({ label: item, value: item }))
-  } catch (error) {
-    projectPhaseOptions.value = []
-  }
-}
-
-async function loadCategoryOptions() {
-  try {
-    const res = await api.getSystemSettings()
-    categoryOptions.value = (res?.data?.ticket_categories || []).map((item) => ({ label: item, value: item }))
-  } catch (error) {
-    categoryOptions.value = []
-  }
-}
-
-async function loadRootCauseOptions() {
-  try {
-    const res = await api.getSystemSettings()
-    rootCauseOptions.value = (res?.data?.ticket_root_causes || []).map((item) => ({ label: item, value: item }))
+    const config = res?.data || {}
+    projectPhaseOptions.value = (config.ticket_project_phases || []).map((item) => ({ label: item, value: item }))
+    categoryOptions.value = (config.ticket_categories || []).map((item) => ({ label: item, value: item }))
+    rootCauseOptions.value = (config.ticket_root_causes || []).map((item) => ({ label: item, value: item }))
   } catch (error) {
     rootCauseOptions.value = []
+    categoryOptions.value = []
+    projectPhaseOptions.value = []
   }
 }
 

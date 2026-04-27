@@ -11,7 +11,7 @@ from starlette.middleware.base import BaseHTTPMiddleware, RequestResponseEndpoin
 from starlette.requests import Request
 from starlette.types import ASGIApp, Receive, Scope, Send
 
-from app.core.dependency import AuthControl
+from app.core.ctx import CTX_USER_ID, CTX_USER_NAME
 from app.log import logger
 from app.models.admin import AuditLog, User
 
@@ -53,7 +53,10 @@ class HttpAuditLogMiddleware(BaseHTTPMiddleware):
         super().__init__(app)
         self.methods = methods
         self.exclude_paths = exclude_paths
+        self.exclude_patterns = [re.compile(path, re.I) for path in exclude_paths]
         self.audit_log_paths = ["/api/v1/auditlog/list"]
+        self.route_meta_cache: dict[tuple[str, str], tuple[str, str]] = {}
+        self.max_route_cache_size = 1024
         self.max_body_size = 1024 * 1024  # 1MB 响应体大小限制
 
     async def get_request_args(self, request: Request) -> dict:
@@ -84,14 +87,21 @@ class HttpAuditLogMiddleware(BaseHTTPMiddleware):
         return args
 
     async def get_response_body(self, request: Request, response: Response) -> Any:
+        if request.method == "GET" and response.status_code < 400:
+            return None
+
         content_type = (response.headers.get("content-type") or "").lower()
         if "application/json" not in content_type:
-            return {"msg": "Non-JSON response skipped", "content_type": content_type or None}
+            return {"msg": "Non-JSON response skipped", "content-type": content_type or None}
 
         # 检查Content-Length
         content_length = response.headers.get("content-length")
-        if content_length and int(content_length) > self.max_body_size:
-            return {"code": 0, "msg": "Response too large to log", "data": None}
+        if content_length:
+            try:
+                if int(content_length) > self.max_body_size:
+                    return {"code": 0, "msg": "Response too large to log", "data": None}
+            except (TypeError, ValueError):
+                pass
 
         if hasattr(response, "body"):
             body = response.body
@@ -134,6 +144,25 @@ class HttpAuditLogMiddleware(BaseHTTPMiddleware):
         for item in items:
             yield item
 
+    def _resolve_route_meta(self, app: FastAPI, path: str, method: str) -> tuple[str, str]:
+        cache_key = (path, method)
+        cached = self.route_meta_cache.get(cache_key)
+        if cached is not None:
+            return cached
+
+        module = ""
+        summary = ""
+        for route in app.routes:
+            if isinstance(route, APIRoute) and route.path_regex.match(path) and method in route.methods:
+                module = ",".join(route.tags)
+                summary = route.summary or ""
+                break
+
+        if len(self.route_meta_cache) >= self.max_route_cache_size:
+            self.route_meta_cache.clear()
+        self.route_meta_cache[cache_key] = (module, summary)
+        return module, summary
+
     async def get_request_log(self, request: Request, response: Response) -> dict:
         """
         根据request和response对象获取对应的日志记录数据
@@ -141,22 +170,18 @@ class HttpAuditLogMiddleware(BaseHTTPMiddleware):
         data: dict = {"path": request.url.path, "status": response.status_code, "method": request.method}
         # 路由信息
         app: FastAPI = request.app
-        for route in app.routes:
-            if (
-                isinstance(route, APIRoute)
-                and route.path_regex.match(request.url.path)
-                and request.method in route.methods
-            ):
-                data["module"] = ",".join(route.tags)
-                data["summary"] = route.summary
+        module, summary = self._resolve_route_meta(app, request.url.path, request.method)
+        data["module"] = module
+        data["summary"] = summary
         # 获取用户信息
         try:
-            token = request.headers.get("token")
-            user_obj = None
-            if token:
-                user_obj: User = await AuthControl.is_authed(token)
-            data["user_id"] = user_obj.id if user_obj else 0
-            data["username"] = user_obj.username if user_obj else ""
+            user_id = CTX_USER_ID.get() or 0
+            username = CTX_USER_NAME.get() or ""
+            if user_id and not username:
+                user_obj = await User.filter(id=user_id).first()
+                username = user_obj.username if user_obj else ""
+            data["user_id"] = user_id
+            data["username"] = username
         except Exception:
             data["user_id"] = 0
             data["username"] = ""
@@ -168,8 +193,8 @@ class HttpAuditLogMiddleware(BaseHTTPMiddleware):
 
     async def after_request(self, request: Request, response: Response, process_time: int):
         if request.method in self.methods:
-            for path in self.exclude_paths:
-                if re.search(path, request.url.path, re.I) is not None:
+            for pattern in self.exclude_patterns:
+                if pattern.search(request.url.path) is not None:
                     return
             data: dict = await self.get_request_log(request=request, response=response)
             data["response_time"] = process_time
@@ -177,14 +202,17 @@ class HttpAuditLogMiddleware(BaseHTTPMiddleware):
             data["request_args"] = request.state.request_args
             data["response_body"] = await self.get_response_body(request, response)
             try:
-                await AuditLog.create(**data)
+                await BgTasks.add_task(AuditLog.create, **data)
             except Exception as exc:
-                logger.warning(
-                    "[http.audit] write failed path={} method={} error={}",
-                    request.url.path,
-                    request.method,
-                    str(exc),
-                )
+                try:
+                    await AuditLog.create(**data)
+                except Exception:
+                    logger.warning(
+                        "[http.audit] write failed path={} method={} error={}",
+                        request.url.path,
+                        request.method,
+                        str(exc),
+                    )
 
         return response
 

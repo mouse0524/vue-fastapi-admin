@@ -227,6 +227,40 @@ python run.py
 
 服务现在应该正在运行，访问 http://localhost:9999/docs 查看API文档
 
+#### 登录密码 RSA 配置（公钥加密密码）
+
+当启用登录密码 RSA 解密时，前端会从 `/api/v1/base/public_config` 获取公钥，并在登录前对密码进行 RSA-OAEP(SHA256) 加密。
+
+1. 在运行环境中设置私钥（推荐环境变量或 `.env`，不要写死到 `app/settings/config.py`）：
+
+```env
+LOGIN_PASSWORD_RSA_PRIVATE_KEY="-----BEGIN PRIVATE KEY-----\n...\n-----END PRIVATE KEY-----\n"
+```
+
+2. 重启后端服务。
+
+3. 自检公钥是否生效（PowerShell）：
+
+```powershell
+$r = Invoke-RestMethod "http://127.0.0.1:8000/api/v1/base/public_config"
+$r.data.login_password_public_key
+```
+
+预期返回内容包含 `-----BEGIN PUBLIC KEY-----`。
+
+说明：
+
+- 未配置 `LOGIN_PASSWORD_RSA_PRIVATE_KEY` 时，系统会保持兼容模式（不强制密码密文）。
+- 若把私钥直接写到 `Settings` 类字段且缺少类型注解，会触发 Pydantic v2 报错；请保持 `LOGIN_PASSWORD_RSA_PRIVATE_KEY: str = ""`，真实值放环境变量。
+
+#### 生产环境密钥轮换建议
+
+1. 采用双阶段轮换：先发布新公钥（服务端切新私钥并兼容短时会话），再逐步淘汰旧会话。
+2. 轮换窗口内缩短登录会话有效期，降低旧密钥影响面。
+3. 私钥仅放密钥管理系统/环境变量，严禁提交到仓库与镜像。
+4. 轮换后执行回归：`public_config` 公钥返回、登录成功率、解密失败率、审计日志异常比率。
+5. 预留应急回滚：保留上一版配置快照，异常时可快速恢复并重启服务。
+
 #### 前端
 启动项目需要以下环境：
 - node v18.8.0+

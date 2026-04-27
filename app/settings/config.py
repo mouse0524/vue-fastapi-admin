@@ -23,10 +23,10 @@ class Settings(BaseSettings):
     SECRET_KEY: str = "3488a63e1765035d386f05409663f55c83bfae3b3c61a932744b20ad14244dcf"  # openssl rand -hex 32
     JWT_ALGORITHM: str = "HS256"
     JWT_ACCESS_TOKEN_EXPIRE_MINUTES: int = 60 * 24 * 7  # 7 day
-    REDIS_HOST: str = "127.0.0.1"
+    REDIS_HOST: str = "192.168.2.127"
     REDIS_PORT: int = 6379
     REDIS_DB: int = 0
-    REDIS_PASSWORD: str | None = None
+    REDIS_PASSWORD: str | None = "redis_p82Ytd"
     CAPTCHA_TTL_SECONDS: int = 120
     CAPTCHA_MAX_RETRY: int = 3
     EMAIL_VERIFY_TTL_SECONDS: int = 600
@@ -48,22 +48,22 @@ class Settings(BaseSettings):
     TORTOISE_ORM: dict = {
         "connections": {
             # SQLite configuration
-            "sqlite": {
-                "engine": "tortoise.backends.sqlite",
-                "credentials": {"file_path": f"{BASE_DIR}/db.sqlite3"},  # Path to SQLite database file
-            },
+            # "sqlite": {
+            #     "engine": "tortoise.backends.sqlite",
+            #     "credentials": {"file_path": f"{BASE_DIR}/db.sqlite3"},  # Path to SQLite database file
+            # },
             # MySQL/MariaDB configuration
             # Install with: tortoise-orm[asyncmy]
-            # "mysql": {
-            #     "engine": "tortoise.backends.mysql",
-            #     "credentials": {
-            #         "host": "localhost",  # Database host address
-            #         "port": 3306,  # Database port
-            #         "user": "yourusername",  # Database username
-            #         "password": "yourpassword",  # Database password
-            #         "database": "yourdatabase",  # Database name
-            #     },
-            # },
+            "mysql": {
+                "engine": "tortoise.backends.mysql",
+                "credentials": {
+                    "host": "192.168.2.127",  # Database host address
+                    "port": 33060,  # Database port
+                    "user": "iandsec-user-center",  # Database username
+                    "password": "Cadhew2RiA5HD87S",  # Database password
+                    "database": "iandsec-user-center",  # Database name
+                },
+            },
             # PostgreSQL configuration
             # Install with: tortoise-orm[asyncpg]
             # "postgres": {
@@ -104,7 +104,7 @@ class Settings(BaseSettings):
         "apps": {
             "models": {
                 "models": ["app.models", "aerich.models"],
-                "default_connection": "sqlite",
+                "default_connection": "mysql",
             },
         },
         "use_tz": False,  # Whether to use timezone-aware datetimes

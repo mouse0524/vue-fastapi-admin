@@ -104,10 +104,29 @@ class TicketController:
     async def get_ticket(self, ticket_id: int) -> Ticket:
         return await Ticket.get(id=ticket_id)
 
-    async def list_tickets(self, *, page: int, page_size: int, search: Q) -> tuple[int, list[Ticket]]:
+    async def list_tickets(self, *, page: int, page_size: int, search: Q) -> tuple[int, list[dict]]:
         query = Ticket.filter(search)
         total = await query.count()
-        rows = await query.offset((page - 1) * page_size).limit(page_size).order_by("-id")
+        rows = await query.order_by("-id").offset((page - 1) * page_size).limit(page_size).values(
+            "id",
+            "ticket_no",
+            "project_phase",
+            "category",
+            "title",
+            "root_cause",
+            "status",
+            "submitter_id",
+            "reviewer_id",
+            "tech_id",
+            "finished_at",
+            "created_at",
+            "updated_at",
+        )
+        for row in rows:
+            for field in ("created_at", "updated_at", "finished_at"):
+                value = row.get(field)
+                if isinstance(value, datetime):
+                    row[field] = value.strftime(settings.DATETIME_FORMAT)
         logger.info("[ticket.list] page={} page_size={} total={}", page, page_size, total)
         return total, rows
 
