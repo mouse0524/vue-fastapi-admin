@@ -23,10 +23,15 @@ class Settings(BaseSettings):
     SECRET_KEY: str = "3488a63e1765035d386f05409663f55c83bfae3b3c61a932744b20ad14244dcf"  # openssl rand -hex 32
     JWT_ALGORITHM: str = "HS256"
     JWT_ACCESS_TOKEN_EXPIRE_MINUTES: int = 60 * 24 * 7  # 7 day
-    REDIS_HOST: str = "192.168.2.127"
-    REDIS_PORT: int = 6379
+    MYSQL_HOST: str = os.getenv("MYSQL_HOST", "192.168.2.127")
+    MYSQL_PORT: int = int(os.getenv("MYSQL_PORT", "33060"))
+    MYSQL_USER: str = os.getenv("MYSQL_USER", "iandsec-user-center")
+    MYSQL_PASSWORD: str = os.getenv("MYSQL_PASSWORD", "Cadhew2RiA5HD87S")
+    MYSQL_DATABASE: str = os.getenv("MYSQL_DATABASE", "iandsec-user-center")
+    REDIS_HOST: str = os.getenv("REDIS_HOST", "192.168.2.127")
+    REDIS_PORT: int = int(os.getenv("REDIS_PORT", "6379"))
     REDIS_DB: int = 0
-    REDIS_PASSWORD: str | None = "redis_p82Ytd"
+    REDIS_PASSWORD: str | None = os.getenv("REDIS_PASSWORD", "redis_p82Ytd")
     CAPTCHA_TTL_SECONDS: int = 120
     CAPTCHA_MAX_RETRY: int = 3
     EMAIL_VERIFY_TTL_SECONDS: int = 600
@@ -57,11 +62,11 @@ class Settings(BaseSettings):
             "mysql": {
                 "engine": "tortoise.backends.mysql",
                 "credentials": {
-                    "host": "192.168.2.127",  # Database host address
-                    "port": 33060,  # Database port
-                    "user": "iandsec-user-center",  # Database username
-                    "password": "Cadhew2RiA5HD87S",  # Database password
-                    "database": "iandsec-user-center",  # Database name
+                    "host": MYSQL_HOST,  # Database host address
+                    "port": MYSQL_PORT,  # Database port
+                    "user": MYSQL_USER,  # Database username
+                    "password": MYSQL_PASSWORD,  # Database password
+                    "database": MYSQL_DATABASE,  # Database name
                 },
             },
             # PostgreSQL configuration

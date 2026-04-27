@@ -1,0 +1,71 @@
+services:
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: vue-fastapi-admin-app
+    depends_on:
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment:
+      MYSQL_HOST: mysql
+      MYSQL_PORT: 3306
+      MYSQL_USER: iandsec-user-center
+      MYSQL_PASSWORD: Cadhew2RiA5HD87S
+      MYSQL_DATABASE: iandsec-user-center
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      REDIS_PASSWORD: redis_p82Ytd
+    ports:
+      - "80:80"
+    volumes:
+      - app_storage:/opt/vue-fastapi-admin/storage
+      - app_logs:/opt/vue-fastapi-admin/app/logs
+    restart: unless-stopped
+
+  mysql:
+    image: mysql:8.0
+    container_name: vue-fastapi-admin-mysql
+    environment:
+      MYSQL_ROOT_PASSWORD: root_p82Ytd
+      MYSQL_DATABASE: iandsec-user-center
+      MYSQL_USER: iandsec-user-center
+      MYSQL_PASSWORD: Cadhew2RiA5HD87S
+      TZ: Asia/Shanghai
+    command:
+      - --character-set-server=utf8mb4
+      - --collation-server=utf8mb4_unicode_ci
+      - --default-time-zone=+08:00
+    ports:
+      - "33060:3306"
+    volumes:
+      - mysql_data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD-SHELL", "mysqladmin ping -h 127.0.0.1 -uroot -p$${MYSQL_ROOT_PASSWORD} --silent"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+
+  redis:
+    image: redis:7-alpine
+    container_name: vue-fastapi-admin-redis
+    command: redis-server --appendonly yes --requirepass redis_p82Ytd
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD-SHELL", "redis-cli -a redis_p82Ytd ping | grep PONG"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+
+volumes:
+  mysql_data:
+  redis_data:
+  app_storage:
+  app_logs:
