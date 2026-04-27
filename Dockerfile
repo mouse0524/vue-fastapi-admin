@@ -1,8 +1,13 @@
-FROM node:18.12.0-alpine3.16 AS web
+FROM node:20-alpine AS web
 
 WORKDIR /opt/vue-fastapi-admin
 COPY /web ./web
-RUN cd /opt/vue-fastapi-admin/web && npm i --registry=https://registry.npmmirror.com && npm run build
+RUN cd /opt/vue-fastapi-admin/web \
+    && corepack enable \
+    && corepack prepare pnpm@9.15.9 --activate \
+    && pnpm config set registry https://registry.npmmirror.com \
+    && pnpm install --frozen-lockfile \
+    && pnpm run build
 
 
 FROM python:3.11-slim-bullseye
