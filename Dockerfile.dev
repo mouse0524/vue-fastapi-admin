@@ -11,7 +11,7 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked,id=core-apt \
     && echo "Asia/Shanghai" > /etc/timezone \
     && apt-get update \
     && apt-get install -y --no-install-recommends \
-    gcc python3-dev bash nginx vim curl procps net-tools default-mysql-client redis-tools \
+    gcc python3-dev bash vim curl procps net-tools default-mysql-client redis-tools \
     ca-certificates gnupg \
     && curl -fsSL https://deb.nodesource.com/setup_20.x | bash - \
     && apt-get install -y nodejs \
@@ -24,13 +24,9 @@ RUN pip install -r requirements.txt -i https://pypi.tuna.tsinghua.edu.cn/simple
 
 # 复制配置文件
 COPY /deploy/entrypoint-dev.sh .
-COPY /deploy/web.conf /etc/nginx/sites-available/web.conf
-
-RUN rm -f /etc/nginx/sites-enabled/default \
-    && ln -s /etc/nginx/sites-available/web.conf /etc/nginx/sites-enabled \
-    && chmod +x entrypoint-dev.sh
+RUN chmod +x entrypoint-dev.sh
 
 ENV LANG=zh_CN.UTF-8
-EXPOSE 80 5173
+EXPOSE 9999 3100
 
 ENTRYPOINT [ "sh", "entrypoint-dev.sh" ]

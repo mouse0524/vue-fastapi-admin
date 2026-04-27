@@ -189,12 +189,12 @@ docker-compose -f docker-compose.dev.yml up -d --build
 - 代码目录挂载到容器，修改代码实时生效
 - 前端使用 `pnpm run dev` 启动，支持热更新
 - 后端使用 `python run.py` 启动，支持热重载（UVICORN_RELOAD=1）
-- 暴露端口：80（nginx）、5173（前端开发服务器）
+- 暴露端口：9999（后端）、3100（前端开发服务器）
 - node_modules 独立挂载，避免宿主机依赖问题
 
 ##### 访问
 
-http://localhost:80
+http://localhost:3100
 
 username：admin
 
