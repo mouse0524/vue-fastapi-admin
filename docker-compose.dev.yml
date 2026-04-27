@@ -2,8 +2,8 @@ services:
   app:
     build:
       context: .
-      dockerfile: Dockerfile
-    container_name: vue-fastapi-admin-app
+      dockerfile: Dockerfile.dev
+    container_name: vue-fastapi-admin-app-dev
     depends_on:
       mysql:
         condition: service_healthy
@@ -18,12 +18,18 @@ services:
       REDIS_HOST: redis
       REDIS_PORT: 6379
       REDIS_PASSWORD: redis_p82Ytd
+      UVICORN_RELOAD: "1"
     ports:
-      - "80:80"
+      - "9999:9999"
+      - "3100:3100"
     volumes:
+      - .:/opt/vue-fastapi-admin
       - app_storage:/opt/vue-fastapi-admin/storage
       - app_logs:/opt/vue-fastapi-admin/app/logs
+      - web_node_modules:/opt/vue-fastapi-admin/web/node_modules
     restart: unless-stopped
+    stdin_open: true
+    tty: true
 
   mysql:
     image: mysql:8.0
@@ -70,3 +76,4 @@ volumes:
   redis_data:
   app_storage:
   app_logs:
+  web_node_modules:

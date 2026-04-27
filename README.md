@@ -136,22 +136,23 @@
 ![image](https://github.com/mizhexiaoxiao/vue-fastapi-admin/blob/main/deploy/sample-picture/api.jpg)
 
 ### 快速开始
-#### 方法一：dockerhub拉取镜像
+#### 生产环境部署
+##### 方法一：dockerhub拉取镜像
 
 ```sh
-docker pull mizhexiaoxiao/vue-fastapi-admin:latest 
+docker pull mizhexiaoxiao/vue-fastapi-admin:latest
 docker run -d --restart=always --name=vue-fastapi-admin -p 9999:80 mizhexiaoxiao/vue-fastapi-admin
 ```
 
-#### 方法二：dockerfile构建镜像
-##### docker安装(版本17.05+)
+##### 方法二：dockerfile构建镜像
+###### docker安装(版本17.05+)
 
 ```sh
 yum install -y docker-ce
 systemctl start docker
 ```
 
-##### 构建镜像
+###### 构建镜像
 
 ```sh
 git clone https://github.com/mizhexiaoxiao/vue-fastapi-admin.git
@@ -159,7 +160,7 @@ cd vue-fastapi-admin
 docker build --no-cache . -t vue-fastapi-admin
 ```
 
-##### 启动容器
+###### 启动容器
 
 ```sh
 docker run -d --restart=always --name=vue-fastapi-admin -p 9999:80 vue-fastapi-admin
@@ -172,6 +173,38 @@ http://localhost:9999
 username：admin
 
 password：123456
+
+#### 开发环境部署
+开发环境支持代码热更新，代码修改后会自动重启服务。
+
+##### 使用 docker-compose
+
+```sh
+git clone https://github.com/mizhexiaoxiao/vue-fastapi-admin.git
+cd vue-fastapi-admin
+docker-compose -f docker-compose.dev.yml up -d --build
+```
+
+##### 开发环境特性
+- 代码目录挂载到容器，修改代码实时生效
+- 前端使用 `pnpm run dev` 启动，支持热更新
+- 后端使用 `python run.py` 启动，支持热重载（UVICORN_RELOAD=1）
+- 暴露端口：80（nginx）、5173（前端开发服务器）
+- node_modules 独立挂载，避免宿主机依赖问题
+
+##### 访问
+
+http://localhost:80
+
+username：admin
+
+password：123456
+
+##### 停止开发环境
+
+```sh
+docker-compose -f docker-compose.dev.yml down
+```
 
 ### 本地启动
 #### 后端
