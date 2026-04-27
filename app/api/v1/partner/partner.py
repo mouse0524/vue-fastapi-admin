@@ -43,9 +43,8 @@ async def partner_register(payload: PartnerRegisterIn):
         logger.warning("[api.partner.register] email_code_invalid email={}", payload.email)
         return Fail(code=400, msg="邮箱验证码错误或已失效，请重新获取后再提交")
 
-    data = payload.model_dump()
     try:
-        register_obj = await partner_controller.register(data)
+        register_obj = await partner_controller.register(payload)
     except HTTPException as exc:
         return Fail(code=exc.status_code, msg=str(exc.detail))
     logger.info("[api.partner.register] success register_id={} email={}", register_obj.id, register_obj.email)
@@ -127,11 +126,14 @@ async def partner_register_review(payload: PartnerReviewIn):
     if not payload.approved and not (payload.comment or "").strip():
         return Fail(code=400, msg="请填写驳回理由后再提交")
 
-    obj = await partner_controller.review(
-        register_id=payload.id,
-        reviewer_id=user_id,
-        approved=payload.approved,
-        comment=payload.comment,
-    )
+    try:
+        obj = await partner_controller.review(
+            register_id=payload.id,
+            reviewer_id=user_id,
+            approved=payload.approved,
+            comment=payload.comment,
+        )
+    except HTTPException as exc:
+        return Fail(code=exc.status_code, msg=str(exc.detail))
     logger.info("[api.partner.review] success reviewer_id={} register_id={} status={}", user_id, obj.id, obj.status)
     return Success(msg="审核完成", data=await obj.to_dict(exclude_fields=["password_hash"]))

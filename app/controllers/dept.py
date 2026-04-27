@@ -41,6 +41,30 @@ class DeptController(CRUDBase[Dept, DeptCreate, DeptUpdate]):
     async def get_dept_info(self):
         pass
 
+    async def get_or_create(self, *, name: str, parent_id: int = 0, desc: str = "") -> Dept:
+        dept_obj = await Dept.filter(name=name).first()
+        if dept_obj:
+            logger.info("[dept.get_or_create] reuse name={} dept_id={} parent_id={}", name, dept_obj.id, dept_obj.parent_id)
+            if dept_obj.is_deleted:
+                dept_obj.is_deleted = False
+                dept_obj.parent_id = parent_id
+                dept_obj.desc = desc or dept_obj.desc
+                await dept_obj.save()
+                logger.info("[dept.get_or_create] revive name={} dept_id={} parent_id={}", name, dept_obj.id, parent_id)
+            return dept_obj
+
+        dept_obj = await Dept.create(name=name, parent_id=parent_id, desc=desc, order=0, is_deleted=False)
+        logger.info("[dept.get_or_create] create name={} dept_id={} parent_id={}", name, dept_obj.id, parent_id)
+
+        closure_rows = []
+        if parent_id != 0:
+            parent_paths = await DeptClosure.filter(descendant=parent_id)
+            for item in parent_paths:
+                closure_rows.append(DeptClosure(ancestor=item.ancestor, descendant=dept_obj.id, level=item.level + 1))
+        closure_rows.append(DeptClosure(ancestor=dept_obj.id, descendant=dept_obj.id, level=0))
+        await DeptClosure.bulk_create(closure_rows)
+        return dept_obj
+
     async def update_dept_closure(self, obj: Dept):
         parent_depts = await DeptClosure.filter(descendant=obj.parent_id)
         for i in parent_depts:

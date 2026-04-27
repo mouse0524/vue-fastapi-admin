@@ -27,7 +27,18 @@ class UserController(CRUDBase[User, UserCreate, UserUpdate]):
         logger.info("[user.create] start username={} email={} dept_id={}", obj_in.username, obj_in.email, obj_in.dept_id)
         obj_in.password = get_password_hash(password=obj_in.password)
         obj = await self.create(obj_in)
+        if obj_in.role_ids:
+            await self.update_roles(obj, obj_in.role_ids)
         logger.info("[user.create] success user_id={} username={}", obj.id, obj.username)
+        return obj
+
+    async def create_user_with_hash(self, obj_in: UserCreate, password_hash: str, role_ids: list[int] | None = None) -> User:
+        logger.info("[user.create_with_hash] start username={} email={} dept_id={}", obj_in.username, obj_in.email, obj_in.dept_id)
+        obj_in.password = password_hash
+        obj = await self.create(obj_in)
+        if role_ids:
+            await self.update_roles(obj, role_ids)
+        logger.info("[user.create_with_hash] success user_id={} username={}", obj.id, obj.username)
         return obj
 
     async def update_last_login(self, id: int) -> None:
