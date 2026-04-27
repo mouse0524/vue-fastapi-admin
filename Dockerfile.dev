@@ -20,11 +20,7 @@ RUN apt-get update \
 COPY requirements.txt .
 RUN pip install -r requirements.txt -i https://pypi.tuna.tsinghua.edu.cn/simple
 
-# 复制配置文件
-COPY deploy/entrypoint-dev.sh .
-RUN chmod +x entrypoint-dev.sh
-
 ENV LANG=zh_CN.UTF-8
 EXPOSE 9999 3100
 
-ENTRYPOINT [ "sh", "entrypoint-dev.sh" ]
+ENTRYPOINT [ "sh", "deploy/entrypoint-dev.sh" ]
