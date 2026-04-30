@@ -1,7 +1,9 @@
+import asyncio
 import os
 import uuid
 from datetime import datetime
 from mimetypes import guess_type
+from time import perf_counter
 
 from fastapi import HTTPException, UploadFile
 from tortoise.expressions import Q
@@ -105,6 +107,7 @@ class TicketController:
         return await Ticket.get(id=ticket_id)
 
     async def list_tickets(self, *, page: int, page_size: int, search: Q) -> tuple[int, list[dict]]:
+        start_at = perf_counter()
         query = Ticket.filter(search)
         total = await query.count()
         rows = await query.order_by("-id").offset((page - 1) * page_size).limit(page_size).values(
@@ -122,12 +125,33 @@ class TicketController:
             "created_at",
             "updated_at",
         )
+
+        user_ids = {
+            *(row.get("submitter_id") for row in rows if row.get("submitter_id")),
+            *(row.get("reviewer_id") for row in rows if row.get("reviewer_id")),
+            *(row.get("tech_id") for row in rows if row.get("tech_id")),
+        }
+        user_map: dict[int, str] = {}
+        if user_ids:
+            user_rows = await User.filter(id__in=list(user_ids)).values("id", "username", "alias")
+            user_map = {item["id"]: (item.get("alias") or item.get("username") or "") for item in user_rows}
+
         for row in rows:
             for field in ("created_at", "updated_at", "finished_at"):
                 value = row.get(field)
                 if isinstance(value, datetime):
                     row[field] = value.strftime(settings.DATETIME_FORMAT)
-        logger.info("[ticket.list] page={} page_size={} total={}", page, page_size, total)
+            row["submitter_name"] = user_map.get(row.get("submitter_id"), "")
+            row["reviewer_name"] = user_map.get(row.get("reviewer_id"), "")
+            row["tech_name"] = user_map.get(row.get("tech_id"), "")
+        logger.info(
+            "[ticket.list] page={} page_size={} total={} rows={} cost_ms={}",
+            page,
+            page_size,
+            total,
+            len(rows),
+            int((perf_counter() - start_at) * 1000),
+        )
         return total, rows
 
     async def set_customer_service_review(
@@ -336,17 +360,38 @@ class TicketController:
         )
         return attachment
 
-    async def get_ticket_detail(self, ticket_id: int) -> dict:
-        ticket = await self.get_ticket(ticket_id)
+    async def get_ticket_detail(self, ticket_id: int, ticket: Ticket | None = None) -> dict:
+        if ticket is None:
+            ticket = await self.get_ticket(ticket_id)
+        attachment_rows, action_rows = await asyncio.gather(
+            TicketAttachment.filter(ticket_id=ticket_id).order_by("id"),
+            TicketActionLog.filter(ticket_id=ticket_id).order_by("id"),
+        )
+
+        attachment_data, action_data = await asyncio.gather(
+            asyncio.gather(*(item.to_dict() for item in attachment_rows)),
+            asyncio.gather(*(item.to_dict() for item in action_rows)),
+        )
+
+        user_ids = {
+            ticket.submitter_id,
+            *(uid for uid in [ticket.reviewer_id, ticket.tech_id] if uid),
+            *(item.operator_id for item in action_rows if item.operator_id),
+        }
+        user_map: dict[int, str] = {}
+        if user_ids:
+            user_rows = await User.filter(id__in=list(user_ids)).values("id", "username", "alias")
+            user_map = {item["id"]: (item.get("alias") or item.get("username") or "") for item in user_rows}
+
+        for item in action_data:
+            item["operator_name"] = user_map.get(item.get("operator_id"), "")
+
         data = await ticket.to_dict()
-        data["attachments"] = [
-            await item.to_dict() for item in await TicketAttachment.filter(ticket_id=ticket_id).order_by("id")
-        ]
-        data["actions"] = [
-            await item.to_dict() for item in await TicketActionLog.filter(ticket_id=ticket_id).order_by("id")
-        ]
-        submitter = await User.filter(id=ticket.submitter_id).first()
-        data["submitter_name"] = submitter.username if submitter else ""
+        data["attachments"] = list(attachment_data)
+        data["actions"] = list(action_data)
+        data["submitter_name"] = user_map.get(ticket.submitter_id, "")
+        data["reviewer_name"] = user_map.get(ticket.reviewer_id or 0, "")
+        data["tech_name"] = user_map.get(ticket.tech_id or 0, "")
         return data
 
     async def get_attachment_download(self, *, attachment_id: int, user: User, role_names: list[str]) -> dict:

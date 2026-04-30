@@ -314,6 +314,33 @@ pnpm i # 或者 npm i
 pnpm dev
 ```
 
+### 性能压测观察项（工单接口）
+
+近期已对工单列表与详情链路增加性能日志，建议压测时重点关注以下指标：
+
+- `api.ticket.list`：接口总耗时与分段耗时
+  - `auth_ms`：鉴权阶段耗时
+  - `filter_ms`：筛选条件与权限过滤构建耗时
+  - `query_ms`：控制器查询与结果组装耗时
+  - `total_ms`：接口总耗时
+- `ticket.list`：控制器侧分页查询耗时
+  - `cost_ms`：数据库查询 + 用户名映射 + 时间格式化总耗时
+  - 同时包含 `rows`、`total`，可用于定位“大页码/大结果集”波动
+- `api.ticket.get`：详情接口分段耗时
+  - `auth_ms`：鉴权耗时
+  - `perm_ms`：权限判断与基础数据获取耗时
+  - `detail_ms`：详情组装耗时（附件、操作日志、用户映射）
+  - `total_ms`：接口总耗时
+
+#### 建议压测流程
+
+1. 固定同一账号、同一筛选条件，连续请求 `/api/v1/tickets/list` 与 `/api/v1/tickets/get`。
+2. 分别记录 `total_ms` 与分段耗时（`auth_ms/filter_ms/query_ms/detail_ms`）的 P50/P95。
+3. 当 `total_ms` 升高时，优先根据分段判断瓶颈：
+   - `query_ms`/`detail_ms` 升高：优先排查数据库、序列化、关联数据组装。
+   - `auth_ms`/`perm_ms` 升高：优先排查鉴权、角色权限读取、上下文依赖。
+4. 与变更前基线对比，确认优化是否稳定生效。
+
 ### 目录说明
 
 ```

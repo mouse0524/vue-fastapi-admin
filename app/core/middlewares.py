@@ -2,6 +2,7 @@ import json
 import re
 import uuid
 from datetime import datetime
+from json import JSONDecodeError
 from typing import Any, AsyncGenerator
 
 from fastapi import FastAPI
@@ -70,7 +71,7 @@ class HttpAuditLogMiddleware(BaseHTTPMiddleware):
             try:
                 body = await request.json()
                 args.update(body)
-            except json.JSONDecodeError:
+            except JSONDecodeError:
                 try:
                     body = await request.form()
                     # args.update(body)
@@ -81,8 +82,8 @@ class HttpAuditLogMiddleware(BaseHTTPMiddleware):
                             args[k] = [file.filename for file in v]
                         else:
                             args[k] = v
-                except Exception:
-                    pass
+                except (TypeError, ValueError) as exc:
+                    logger.debug("[http.audit] parse form body failed path={} error={}", request.url.path, str(exc))
 
         return args
 
@@ -182,7 +183,7 @@ class HttpAuditLogMiddleware(BaseHTTPMiddleware):
                 username = user_obj.username if user_obj else ""
             data["user_id"] = user_id
             data["username"] = username
-        except Exception:
+        except LookupError:
             data["user_id"] = 0
             data["username"] = ""
         return data
@@ -203,15 +204,16 @@ class HttpAuditLogMiddleware(BaseHTTPMiddleware):
             data["response_body"] = await self.get_response_body(request, response)
             try:
                 await BgTasks.add_task(AuditLog.create, **data)
-            except Exception as exc:
+            except (TypeError, ValueError, RuntimeError) as exc:
                 try:
                     await AuditLog.create(**data)
-                except Exception:
+                except (TypeError, ValueError, RuntimeError) as fallback_exc:
                     logger.warning(
-                        "[http.audit] write failed path={} method={} error={}",
+                        "[http.audit] write failed path={} method={} error={} fallback_error={}",
                         request.url.path,
                         request.method,
                         str(exc),
+                        str(fallback_exc),
                     )
 
         return response

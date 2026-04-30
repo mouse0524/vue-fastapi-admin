@@ -125,7 +125,7 @@ const columns = [
           v-model:query-items="queryItems"
           :columns="columns"
           :get-data="api.getTicketList"
-          @on-data-change="(rows) => (tableData = rows)"
+          @on-data-change="(rows) => (tableData.value = rows)"
         >
           <template #queryBar>
             <QueryBarItem label="标题" :label-width="40">

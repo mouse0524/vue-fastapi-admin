@@ -1,4 +1,5 @@
 from datetime import datetime
+from time import perf_counter
 
 from fastapi import APIRouter, File, HTTPException, Query, UploadFile
 from fastapi.responses import FileResponse
@@ -107,7 +108,11 @@ async def list_ticket(
     finished_start: datetime | None = Query(None, description="完成时间开始"),
     finished_end: datetime | None = Query(None, description="完成时间结束"),
 ):
+    start_at = perf_counter()
     user = await _get_current_user()
+    auth_cost_ms = int((perf_counter() - start_at) * 1000)
+
+    filter_start_at = perf_counter()
     role_names = await _get_user_role_names(user)
 
     q = Q()
@@ -135,20 +140,56 @@ async def list_ticket(
             q &= Q(tech_id=user.id) | Q(submitter_id=user.id)
         else:
             q &= Q(submitter_id=user.id)
+    filter_cost_ms = int((perf_counter() - filter_start_at) * 1000)
 
+    query_start_at = perf_counter()
     total, rows = await ticket_controller.list_tickets(page=page, page_size=page_size, search=q)
+    query_cost_ms = int((perf_counter() - query_start_at) * 1000)
+    total_cost_ms = int((perf_counter() - start_at) * 1000)
+    logger.info(
+        "[api.ticket.list] user_id={} page={} page_size={} total={} rows={} auth_ms={} filter_ms={} query_ms={} total_ms={}",
+        user.id,
+        page,
+        page_size,
+        total,
+        len(rows),
+        auth_cost_ms,
+        filter_cost_ms,
+        query_cost_ms,
+        total_cost_ms,
+    )
     return SuccessExtra(data=rows, total=total, page=page, page_size=page_size)
 
 
 @router.get("/get", summary="工单详情", dependencies=[DependAuth])
 async def get_ticket(ticket_id: int = Query(..., description="工单ID")):
+    start_at = perf_counter()
     user = await _get_current_user()
+    auth_cost_ms = int((perf_counter() - start_at) * 1000)
+
+    perm_start_at = perf_counter()
     role_names = await _get_user_role_names(user)
     ticket = await Ticket.get(id=ticket_id)
     if not user.is_superuser and "管理员" not in role_names and "客服" not in role_names:
         if ticket.submitter_id != user.id and ticket.tech_id != user.id:
             return Fail(code=403, msg="您暂无权限查看该工单")
-    detail = await ticket_controller.get_ticket_detail(ticket_id=ticket_id)
+    perm_cost_ms = int((perf_counter() - perm_start_at) * 1000)
+
+    detail_start_at = perf_counter()
+    detail = await ticket_controller.get_ticket_detail(ticket_id=ticket_id, ticket=ticket)
+    detail_cost_ms = int((perf_counter() - detail_start_at) * 1000)
+
+    total_cost_ms = int((perf_counter() - start_at) * 1000)
+    logger.info(
+        "[api.ticket.get] user_id={} ticket_id={} status={} auth_ms={} perm_ms={} detail_ms={} total_ms={}",
+        user.id,
+        ticket_id,
+        ticket.status,
+        auth_cost_ms,
+        perm_cost_ms,
+        detail_cost_ms,
+        total_cost_ms,
+    )
     return Success(data=detail)
 
 
