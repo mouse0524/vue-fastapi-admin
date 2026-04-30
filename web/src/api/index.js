@@ -104,29 +104,4 @@ export default {
   webdavCreateShare: (data = {}) => request.post('/webdav/share/create', data),
   webdavShareList: (params = {}) => request.get('/webdav/share/list', { params }),
   webdavShareDelete: (data = {}) => request.post('/webdav/share/delete', data),
-  // kb
-  kbSpaceList: (params = {}) => request.get('/kb/space/list', { params }),
-  kbSpaceCreate: (data = {}) => request.post('/kb/space/create', data),
-  kbSpaceUpdate: (data = {}) => request.post('/kb/space/update', data),
-  kbDocumentList: (params = {}) => request.get('/kb/document/list', { params }),
-  kbDocumentCreate: (data = {}) => request.post('/kb/document/create', data),
-  kbDocumentReparse: (data = {}) => request.post('/kb/document/reparse', null, { params: data }),
-  kbDocumentProcessPending: (params = {}) => request.post('/kb/document/process_pending', null, { params }),
-  kbDocumentDelete: (data = {}) => request.post('/kb/document/delete', data),
-  kbDocumentUpload: (spaceId, file, title = '') => {
-    const formData = new FormData()
-    formData.append('file', file)
-    const query = `space_id=${encodeURIComponent(spaceId)}&title=${encodeURIComponent(title || '')}`
-    return request.post(`/kb/document/upload?${query}`, formData, {
-      headers: { 'Content-Type': 'multipart/form-data' },
-    })
-  },
-  kbSessionList: (params = {}) => request.get('/kb/session/list', { params }),
-  kbSessionCreate: (data = {}) => request.post('/kb/session/create', data),
-  kbSessionMessages: (params = {}) => request.get('/kb/session/messages', { params }),
-  kbChatAsk: (data = {}) => request.post('/kb/chat/ask', data),
-  kbFeedbackCreate: (data = {}) => request.post('/kb/feedback/create', data),
-  kbFeedbackList: (params = {}) => request.get('/kb/feedback/list', { params }),
-  kbLlmLogList: (params = {}) => request.get('/kb/llm/log/list', { params }),
-  kbLlmTest: () => request.get('/kb/llm/test'),
 }

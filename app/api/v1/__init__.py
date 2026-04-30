@@ -6,7 +6,6 @@ from .apis import apis_router
 from .auditlog import auditlog_router
 from .base import base_router
 from .depts import depts_router
-from .kb import kb_router
 from .menus import menus_router
 from .partner import partner_router
 from .public_ticket import public_ticket_router
@@ -31,4 +30,3 @@ v1_router.include_router(auditlog_router, prefix="/auditlog", dependencies=[Depe
 v1_router.include_router(tickets_router, prefix="/ticket", dependencies=[DependPermission])
 v1_router.include_router(settings_router, prefix="/settings", dependencies=[DependPermission])
 v1_router.include_router(webdav_router, prefix="/webdav", dependencies=[DependPermission])
-v1_router.include_router(kb_router, prefix="/kb", dependencies=[DependPermission])

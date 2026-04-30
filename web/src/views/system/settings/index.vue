@@ -27,7 +27,6 @@ const formRef = ref(null)
 const loading = ref(false)
 const saving = ref(false)
 const webdavTesting = ref(false)
-const llmTesting = ref(false)
 const logoUploading = ref(false)
 const previewVisible = ref(false)
 const appStore = useAppStore()
@@ -73,11 +72,6 @@ const form = ref({
   webdav_password: '',
   webdav_share_default_expire_hours: 168,
   webdav_signature_secret: '',
-  llm_provider: 'openai',
-  llm_base_url: 'https://api.openai.com/v1',
-  llm_api_key: '',
-  llm_model: 'mock-rag-v1',
-  llm_timeout_seconds: 20,
 })
 
 const previewParams = ref({
@@ -291,20 +285,6 @@ async function testWebdavConnection() {
   }
 }
 
-async function testLlmConnection() {
-  try {
-    llmTesting.value = true
-    const res = await api.kbLlmTest()
-    const data = res?.data || {}
-    if (data.ok) {
-      $message.success(`模型连接成功（${data.provider || '-'} / ${data.model || '-'}，${data.latency_ms ?? '-'}ms）`)
-    } else {
-      $message.warning(`模型连接失败：${data.error_code || 'unknown_error'}`)
-    }
-  } finally {
-    llmTesting.value = false
-  }
-}
 
 async function uploadLogo({ file, onFinish, onError }) {
   try {
@@ -538,37 +518,6 @@ function applyPresetHtmlTemplates() {
               </NFormItem>
               <NFormItem>
                 <NButton type="primary" ghost :loading="webdavTesting" @click="testWebdavConnection">测试连接</NButton>
-              </NFormItem>
-            </NCard>
-          </NTabPane>
-
-          <NTabPane name="llm" tab="AI模型配置">
-            <NCard size="small" title="大模型统一配置">
-              <NAlert type="info" class="mb-12">
-                知识库问答会优先读取这里的模型配置；API Key 显示为掩码，保持不变可直接保存。
-              </NAlert>
-              <NFormItem label="提供商">
-                <NInput v-model:value="form.llm_provider" placeholder="例如 openai / openai_compat" />
-              </NFormItem>
-              <NFormItem label="Base URL">
-                <NInput v-model:value="form.llm_base_url" placeholder="例如 https://api.openai.com/v1" />
-              </NFormItem>
-              <NFormItem label="API Key">
-                <NInput
-                  v-model:value="form.llm_api_key"
-                  type="password"
-                  show-password-on="mousedown"
-                  placeholder="保持不变可留******"
-                />
-              </NFormItem>
-              <NFormItem label="模型名称">
-                <NInput v-model:value="form.llm_model" placeholder="例如 gpt-4o-mini" />
-              </NFormItem>
-              <NFormItem label="超时(秒)">
-                <NInputNumber v-model:value="form.llm_timeout_seconds" :min="1" :max="120" />
-              </NFormItem>
-              <NFormItem>
-                <NButton type="primary" ghost :loading="llmTesting" @click="testLlmConnection">测试连接</NButton>
               </NFormItem>
             </NCard>
           </NTabPane>

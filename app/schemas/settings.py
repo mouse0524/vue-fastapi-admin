@@ -47,12 +47,6 @@ class SystemSettingUpdateIn(BaseModel):
     webdav_share_default_expire_hours: int = 168
     webdav_signature_secret: str | None = None
 
-    llm_provider: str = "openai"
-    llm_base_url: str | None = None
-    llm_api_key: str | None = None
-    llm_model: str = "mock-rag-v1"
-    llm_timeout_seconds: int = 20
-
     @field_validator("ticket_attachment_extensions")
     @classmethod
     def validate_attachment_extensions(cls, value: list[str]):
