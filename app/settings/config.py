@@ -14,6 +14,7 @@ class Settings(BaseSettings):
     CORS_ALLOW_CREDENTIALS: bool = True
     CORS_ALLOW_METHODS: typing.List = ["*"]
     CORS_ALLOW_HEADERS: typing.List = ["*"]
+    TRUST_PROXY_HEADERS: bool = False
 
     DEBUG: bool = True
 

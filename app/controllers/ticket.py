@@ -513,18 +513,6 @@ class TicketController:
                 detail=f"不支持的文件后缀，仅允许：{', '.join(allowed_extensions)}（系统会按文件magic头校验真实类型）",
             )
 
-        data = await file.read()
-        if len(data) > settings.MAX_UPLOAD_SIZE:
-            raise HTTPException(status_code=400, detail="文件大小超限")
-
-        detected_ext = detect_file_type(data)
-        if not detected_ext:
-            raise HTTPException(status_code=400, detail="无法识别文件magic头，请上传受支持的标准文件")
-        if detected_ext != ext:
-            raise HTTPException(status_code=400, detail=f"文件magic头与扩展名不匹配，检测到真实类型为 {detected_ext}")
-        if detected_ext not in allowed_extensions:
-            raise HTTPException(status_code=400, detail=f"检测到的真实类型 {detected_ext} 未被允许上传（按magic头校验）")
-
         now = datetime.now()
         rel_dir = os.path.join("tickets", now.strftime("%Y"), now.strftime("%m"), now.strftime("%d"))
         abs_dir = os.path.join(settings.UPLOAD_DIR, rel_dir)
@@ -534,14 +522,55 @@ class TicketController:
         rel_path = os.path.join(rel_dir, stored_name).replace("\\", "/")
         abs_path = os.path.join(settings.UPLOAD_DIR, rel_path)
 
-        with open(abs_path, "wb") as f:
-            f.write(data)
+        total_size = 0
+        head = b""
+        chunk_size = 1024 * 1024
+        try:
+            with open(abs_path, "wb") as f:
+                while True:
+                    chunk = await file.read(chunk_size)
+                    if not chunk:
+                        break
+                    if len(head) < 64:
+                        head += chunk[: 64 - len(head)]
+                    total_size += len(chunk)
+                    if total_size > settings.MAX_UPLOAD_SIZE:
+                        raise HTTPException(status_code=400, detail="文件大小超限")
+                    f.write(chunk)
+        except HTTPException:
+            try:
+                os.remove(abs_path)
+            except OSError:
+                pass
+            raise
+        except OSError as exc:
+            try:
+                os.remove(abs_path)
+            except OSError:
+                pass
+            raise HTTPException(status_code=500, detail=f"保存文件失败: {exc}")
+
+        detected_ext = detect_file_type(head)
+        if not detected_ext:
+            raise HTTPException(status_code=400, detail="无法识别文件magic头，请上传受支持的标准文件")
+        if detected_ext != ext:
+            try:
+                os.remove(abs_path)
+            except OSError:
+                pass
+            raise HTTPException(status_code=400, detail=f"文件magic头与扩展名不匹配，检测到真实类型为 {detected_ext}")
+        if detected_ext not in allowed_extensions:
+            try:
+                os.remove(abs_path)
+            except OSError:
+                pass
+            raise HTTPException(status_code=400, detail=f"检测到的真实类型 {detected_ext} 未被允许上传（按magic头校验）")
 
         attachment = await TicketAttachment.create(
             ticket_id=None,
             origin_name=filename,
             file_path=rel_path,
-            file_size=len(data),
+            file_size=total_size,
             mime_type=guess_type(filename)[0] or file.content_type or "application/octet-stream",
             uploader_id=uploader_id,
         )
@@ -626,9 +655,13 @@ class TicketController:
             elif ticket.submitter_id != user.id:
                 raise HTTPException(status_code=403, detail="无权限下载该附件")
 
-        abs_path = os.path.abspath(os.path.join(settings.UPLOAD_DIR, attachment.file_path))
-        upload_root = os.path.abspath(settings.UPLOAD_DIR)
-        if not abs_path.startswith(upload_root):
+        abs_path = os.path.normcase(os.path.realpath(os.path.join(settings.UPLOAD_DIR, attachment.file_path)))
+        upload_root = os.path.normcase(os.path.realpath(settings.UPLOAD_DIR))
+        try:
+            in_root = os.path.commonpath([abs_path, upload_root]) == upload_root
+        except ValueError:
+            in_root = False
+        if not in_root:
             raise HTTPException(status_code=400, detail="附件路径非法")
         if not os.path.exists(abs_path):
             raise HTTPException(status_code=404, detail="附件文件不存在")

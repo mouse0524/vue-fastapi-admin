@@ -1,17 +1,35 @@
-from fastapi import APIRouter, Query
+from urllib.parse import urlencode
+from typing import Optional
+
+from fastapi import APIRouter, Query, Request
 from fastapi.responses import StreamingResponse
 
 from app.core.ctx import CTX_USER_ID
 from app.core.dependency import DependAuth
 from app.controllers.webdav import webdav_controller
+from app.core.redis_client import execute_redis
 from app.log import logger
 from app.models.admin import User
-from app.schemas.base import Success, SuccessExtra
+from app.schemas.base import Fail, Success, SuccessExtra
 from app.schemas.webdav import WebDavShareCreateIn, WebDavShareDeleteIn
+from app.settings import settings
 from app.utils.http_headers import build_download_content_disposition
 
 router = APIRouter(dependencies=[DependAuth])
 public_router = APIRouter()
+
+
+def _get_client_ip(request: Request) -> str:
+    if settings.TRUST_PROXY_HEADERS:
+        forwarded_for = request.headers.get("x-forwarded-for")
+        if forwarded_for:
+            return forwarded_for.split(",")[0].strip()
+        real_ip = request.headers.get("x-real-ip")
+        if real_ip:
+            return real_ip.strip()
+    if request.client and request.client.host:
+        return request.client.host
+    return "unknown"
 
 
 @router.get("/list", summary="WebDAV文件列表")
@@ -31,6 +49,9 @@ async def create_webdav_share(payload: WebDavShareCreateIn):
         created_by=user_id,
         expire_hours=payload.expire_hours,
     )
+    sign_data = await webdav_controller.build_share_signature(code=str(data.get("code") or ""))
+    query = urlencode({"code": data.get("code"), "ts": sign_data["ts"], "sig": sign_data["sig"]})
+    data["download_url"] = f"/api/v1/public/webdav/share/download?{query}"
     return Success(msg="分享创建成功", data=data)
 
 
@@ -59,6 +80,9 @@ async def list_webdav_shares(
     for item in rows:
         item_dict = await item.to_dict()
         item_dict["creator_name"] = user_map.get(item.created_by, "")
+        sign_data = await webdav_controller.build_share_signature(code=str(item_dict.get("code") or ""))
+        query = urlencode({"code": item_dict.get("code"), "ts": sign_data["ts"], "sig": sign_data["sig"]})
+        item_dict["download_url"] = f"/api/v1/public/webdav/share/download?{query}"
         data.append(item_dict)
     return SuccessExtra(data=data, total=total, page=page, page_size=page_size)
 
@@ -73,12 +97,51 @@ async def delete_webdav_share(payload: WebDavShareDeleteIn):
 
 
 @public_router.get("/share/download", summary="公开下载WebDAV分享文件")
-async def webdav_share_download(code: str = Query(..., description="分享码")):
+async def webdav_share_download(
+    request: Request,
+    code: str = Query(..., description="分享码"),
+    ts: Optional[int] = Query(None, description="时间戳(秒)"),
+    sig: Optional[str] = Query(None, description="签名"),
+):
+    if ts is None or not isinstance(ts, int) or ts <= 0 or not sig:
+        return Fail(code=400, msg="分享链接缺少签名参数，请重新复制最新下载链接")
+
+    client_ip = _get_client_ip(request)
+    fail_key = f"webdav:share:fail:{client_ip}:{code}"
+    blocked_key = f"webdav:share:blocked:{client_ip}:{code}"
+    try:
+        blocked = await execute_redis("get", blocked_key)
+        if blocked:
+            logger.warning("[webdav.share.download] blocked ip={} code={}", client_ip, code)
+            return Fail(code=429, msg="请求过于频繁，请稍后重试")
+    except Exception as exc:
+        logger.warning("[webdav.share.download] block_check_failed ip={} code={} error={}", client_ip, code, str(exc))
+
+    try:
+        await webdav_controller.verify_share_signature(code=code, ts=ts, sig=sig)
+    except Exception as exc:
+        try:
+            fail_count = await execute_redis("incr", fail_key)
+            if int(fail_count) == 1:
+                await execute_redis("expire", fail_key, 600)
+            if int(fail_count) >= 8:
+                await execute_redis("setex", blocked_key, 900, 1)
+            logger.warning(
+                "[webdav.share.download] sign_failed ip={} code={} fail_count={} error={}",
+                client_ip,
+                code,
+                fail_count,
+                str(exc),
+            )
+        except Exception as counter_exc:
+            logger.warning("[webdav.share.download] fail_counter_error ip={} code={} error={}", client_ip, code, str(counter_exc))
+        raise
+
     share = await webdav_controller.get_share(code)
     iterator, headers = await webdav_controller.download_stream(share.file_path)
     content_type = headers.get("content-type") or "application/octet-stream"
     disposition = build_download_content_disposition(share.file_name)
-    logger.info("[webdav.share.download] code={} file_path={}", code, share.file_path)
+    logger.info("[webdav.share.download] success ip={} code={} file_path={}", client_ip, code, share.file_path)
     return StreamingResponse(
         iterator(),
         media_type=content_type,

@@ -98,6 +98,8 @@ class SystemSettingController:
             "webdav_username": None,
             "webdav_password": None,
             "webdav_share_default_expire_hours": 168,
+            "webdav_signature_ttl": 600,
+            "webdav_max_upload_size": 52428800,
             "webdav_signature_secret": None,
         },
     }
@@ -141,8 +143,8 @@ class SystemSettingController:
             cached = await execute_redis("get", self.PUBLIC_CONFIG_CACHE_KEY)
             if cached:
                 return json.loads(cached)
-        except Exception:
-            pass
+        except Exception as exc:
+            logger.warning("[settings.public_config] cache_read_failed key={} error={}", self.PUBLIC_CONFIG_CACHE_KEY, str(exc))
 
         sections = await self._ensure_all_sections()
         site = sections["site"]
@@ -172,8 +174,8 @@ class SystemSettingController:
         }
         try:
             await execute_redis("setex", self.PUBLIC_CONFIG_CACHE_KEY, self.PUBLIC_CONFIG_CACHE_TTL_SECONDS, json.dumps(result, ensure_ascii=False))
-        except Exception:
-            pass
+        except Exception as exc:
+            logger.warning("[settings.public_config] cache_write_failed key={} error={}", self.PUBLIC_CONFIG_CACHE_KEY, str(exc))
         return result
 
     async def _get_merged_raw(self) -> dict:
@@ -295,6 +297,8 @@ class SystemSettingController:
             "webdav_username",
             "webdav_password",
             "webdav_share_default_expire_hours",
+            "webdav_signature_ttl",
+            "webdav_max_upload_size",
             "webdav_signature_secret",
         }
 
@@ -320,8 +324,8 @@ class SystemSettingController:
 
         try:
             await execute_redis("delete", self.PUBLIC_CONFIG_CACHE_KEY)
-        except Exception:
-            pass
+        except Exception as exc:
+            logger.warning("[settings.update] cache_delete_failed key={} error={}", self.PUBLIC_CONFIG_CACHE_KEY, str(exc))
 
     async def get_logo_abs_path(self) -> str:
         site = (await self._ensure_all_sections())["site"]
@@ -329,9 +333,13 @@ class SystemSettingController:
         if not site_logo:
             raise HTTPException(status_code=404, detail="未配置站点Logo")
 
-        abs_path = os.path.abspath(os.path.join(settings.UPLOAD_DIR, site_logo))
-        upload_root = os.path.abspath(settings.UPLOAD_DIR)
-        if not abs_path.startswith(upload_root):
+        abs_path = os.path.normcase(os.path.realpath(os.path.join(settings.UPLOAD_DIR, site_logo)))
+        upload_root = os.path.normcase(os.path.realpath(settings.UPLOAD_DIR))
+        try:
+            in_root = os.path.commonpath([abs_path, upload_root]) == upload_root
+        except ValueError:
+            in_root = False
+        if not in_root:
             raise HTTPException(status_code=400, detail="Logo路径非法")
         if not os.path.exists(abs_path):
             raise HTTPException(status_code=404, detail="Logo文件不存在")
@@ -343,18 +351,6 @@ class SystemSettingController:
         if ext not in {"jpg", "jpeg", "png", "webp"}:
             raise HTTPException(status_code=400, detail="Logo仅支持 jpg/jpeg/png/webp（并按magic头校验）")
 
-        data = await file.read()
-        if len(data) > settings.MAX_UPLOAD_SIZE:
-            raise HTTPException(status_code=400, detail="Logo文件大小超限")
-
-        detected_ext = detect_file_type(data)
-        if not detected_ext:
-            raise HTTPException(status_code=400, detail="无法识别Logo magic头")
-        if detected_ext == "svg":
-            raise HTTPException(status_code=400, detail="Logo不支持SVG（无法通过magic头可靠校验）")
-        if detected_ext != ext and not ({detected_ext, ext} <= {"jpg", "jpeg"}):
-            raise HTTPException(status_code=400, detail=f"Logo文件magic头与扩展名不匹配，检测到真实类型为 {detected_ext}")
-
         now = datetime.now()
         rel_dir = os.path.join("site", "logo", now.strftime("%Y"), now.strftime("%m"), now.strftime("%d"))
         abs_dir = os.path.join(settings.UPLOAD_DIR, rel_dir)
@@ -363,8 +359,50 @@ class SystemSettingController:
         filename = f"{uuid.uuid4().hex}.{ext}"
         rel_path = os.path.join(rel_dir, filename).replace("\\", "/")
         abs_path = os.path.join(settings.UPLOAD_DIR, rel_path)
-        with open(abs_path, "wb") as f:
-            f.write(data)
+
+        total_size = 0
+        head = b""
+        chunk_size = 1024 * 1024
+        try:
+            with open(abs_path, "wb") as f:
+                while True:
+                    chunk = await file.read(chunk_size)
+                    if not chunk:
+                        break
+                    if len(head) < 64:
+                        head += chunk[: 64 - len(head)]
+                    total_size += len(chunk)
+                    if total_size > settings.MAX_UPLOAD_SIZE:
+                        raise HTTPException(status_code=400, detail="Logo文件大小超限")
+                    f.write(chunk)
+        except HTTPException:
+            try:
+                os.remove(abs_path)
+            except OSError:
+                pass
+            raise
+        except OSError as exc:
+            try:
+                os.remove(abs_path)
+            except OSError:
+                pass
+            raise HTTPException(status_code=500, detail=f"保存Logo失败: {exc}")
+
+        detected_ext = detect_file_type(head)
+        if not detected_ext:
+            raise HTTPException(status_code=400, detail="无法识别Logo magic头")
+        if detected_ext == "svg":
+            try:
+                os.remove(abs_path)
+            except OSError:
+                pass
+            raise HTTPException(status_code=400, detail="Logo不支持SVG（无法通过magic头可靠校验）")
+        if detected_ext != ext and not ({detected_ext, ext} <= {"jpg", "jpeg"}):
+            try:
+                os.remove(abs_path)
+            except OSError:
+                pass
+            raise HTTPException(status_code=400, detail=f"Logo文件magic头与扩展名不匹配，检测到真实类型为 {detected_ext}")
 
         item = await self._get_or_create_section("site")
         merged = dict(self._DEFAULTS["site"])
@@ -374,8 +412,8 @@ class SystemSettingController:
         await item.save()
         try:
             await execute_redis("delete", self.PUBLIC_CONFIG_CACHE_KEY)
-        except Exception:
-            pass
+        except Exception as exc:
+            logger.warning("[settings.logo] cache_delete_failed key={} error={}", self.PUBLIC_CONFIG_CACHE_KEY, str(exc))
         return rel_path
 
 

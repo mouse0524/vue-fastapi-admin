@@ -18,7 +18,7 @@ from app.models.enums import PartnerRegisterStatus, TicketStatus
 from app.schemas.captcha import CaptchaOut
 from app.schemas.mail import ResetPasswordByEmailIn, SendResetPasswordCodeIn, SendVerifyCodeIn
 from app.schemas.base import Fail, Success
-from app.schemas.login import *
+from app.schemas.login import CredentialsSchema, JWTPayload, JWTOut
 from app.schemas.users import UpdatePassword
 from app.settings import settings
 from app.utils.jwt_utils import create_access_token
@@ -28,12 +28,13 @@ router = APIRouter()
 
 
 def _get_client_ip(request: Request) -> str:
-    forwarded_for = request.headers.get("x-forwarded-for")
-    if forwarded_for:
-        return forwarded_for.split(",")[0].strip()
-    real_ip = request.headers.get("x-real-ip")
-    if real_ip:
-        return real_ip.strip()
+    if settings.TRUST_PROXY_HEADERS:
+        forwarded_for = request.headers.get("x-forwarded-for")
+        if forwarded_for:
+            return forwarded_for.split(",")[0].strip()
+        real_ip = request.headers.get("x-real-ip")
+        if real_ip:
+            return real_ip.strip()
     if request.client and request.client.host:
         return request.client.host
     return "unknown"
@@ -252,8 +253,8 @@ async def get_user_menu():
         cached = await execute_redis("get", cache_key)
         if cached:
             return Success(data=json.loads(cached))
-    except Exception:
-        pass
+    except Exception as exc:
+        logger.warning("[api.user_menu] cache_read_failed key={} error={}", cache_key, str(exc))
 
     user_obj = await User.filter(id=user_id).first()
     menus: list[Menu] = []
@@ -279,8 +280,8 @@ async def get_user_menu():
         res.append(parent_menu_dict)
     try:
         await execute_redis("setex", cache_key, 600, json.dumps(res, ensure_ascii=False))
-    except Exception:
-        pass
+    except Exception as exc:
+        logger.warning("[api.user_menu] cache_write_failed key={} error={}", cache_key, str(exc))
     return Success(data=res)
 
 
@@ -292,8 +293,8 @@ async def get_user_api():
         cached = await execute_redis("get", cache_key)
         if cached:
             return Success(data=json.loads(cached))
-    except Exception:
-        pass
+    except Exception as exc:
+        logger.warning("[api.user_api] cache_read_failed key={} error={}", cache_key, str(exc))
 
     user_obj = await User.filter(id=user_id).first()
     if user_obj.is_superuser:
@@ -301,8 +302,8 @@ async def get_user_api():
         apis = [api.method.lower() + api.path for api in api_objs]
         try:
             await execute_redis("setex", cache_key, 600, json.dumps(apis, ensure_ascii=False))
-        except Exception:
-            pass
+        except Exception as exc:
+            logger.warning("[api.user_api] cache_write_failed key={} error={}", cache_key, str(exc))
         return Success(data=apis)
     role_objs: list[Role] = await user_obj.roles
     apis = []
@@ -312,8 +313,8 @@ async def get_user_api():
     apis = list(set(apis))
     try:
         await execute_redis("setex", cache_key, 600, json.dumps(apis, ensure_ascii=False))
-    except Exception:
-        pass
+    except Exception as exc:
+        logger.warning("[api.user_api] cache_write_failed key={} error={}", cache_key, str(exc))
     return Success(data=apis)
 
 

@@ -22,7 +22,7 @@ class CRUDBase(Generic[ModelType, CreateSchemaType, UpdateSchemaType]):
         return await query.count(), await query.offset((page - 1) * page_size).limit(page_size).order_by(*order)
 
     async def create(self, obj_in: CreateSchemaType) -> ModelType:
-        if isinstance(obj_in, Dict):
+        if isinstance(obj_in, dict):
             obj_dict = obj_in
         else:
             obj_dict = obj_in.model_dump()
@@ -31,7 +31,7 @@ class CRUDBase(Generic[ModelType, CreateSchemaType, UpdateSchemaType]):
         return obj
 
     async def update(self, id: int, obj_in: Union[UpdateSchemaType, Dict[str, Any]]) -> ModelType:
-        if isinstance(obj_in, Dict):
+        if isinstance(obj_in, dict):
             obj_dict = obj_in
         else:
             obj_dict = obj_in.model_dump(exclude_unset=True, exclude={"id"})

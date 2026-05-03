@@ -46,7 +46,8 @@ const shareColumns = [
     align: 'left',
     render(row) {
       const origin = window.location.origin
-      const url = `${origin}/api/v1/public/webdav/share/download?code=${row.code}`
+      const apiUrl = row.download_url || ''
+      const url = apiUrl ? `${origin}${apiUrl}` : ''
       const disabled = !row.is_active
       return h(
         NButton,
@@ -56,11 +57,15 @@ const shareColumns = [
           disabled,
           onClick: async () => {
             if (disabled) return
+            if (!url) {
+              $message.error('当前记录缺少下载链接，请刷新后重试')
+              return
+            }
             await navigator.clipboard.writeText(url)
             $message.success('下载链接已复制')
           },
         },
-        { default: () => (disabled ? '已失效' : url) }
+        { default: () => (disabled ? '已失效' : (url || '链接生成中')) }
       )
     },
   },

@@ -59,6 +59,8 @@ class SystemSettingUpdateIn(BaseModel):
     webdav_username: str | None = None
     webdav_password: str | None = None
     webdav_share_default_expire_hours: int = 168
+    webdav_signature_ttl: int = 600
+    webdav_max_upload_size: int = 50 * 1024 * 1024
     webdav_signature_secret: str | None = None
 
     @field_validator("ticket_attachment_extensions")
@@ -139,6 +141,13 @@ class SystemSettingUpdateIn(BaseModel):
                     role_statuses.append(status)
             normalized[role] = role_statuses
         return normalized
+
+    @field_validator("webdav_share_default_expire_hours", "webdav_signature_ttl", "webdav_max_upload_size")
+    @classmethod
+    def validate_positive_webdav_numbers(cls, value: int, info):
+        if value < 1:
+            raise ValueError(f"{info.field_name} 必须大于等于 1")
+        return value
 
 
 class PublicSiteConfigOut(BaseModel):

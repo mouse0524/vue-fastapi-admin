@@ -1,6 +1,7 @@
 import unittest
 
 from app.controllers.ticket import TicketController
+from app.utils.file_signature import detect_file_type
 
 
 class TicketControllerUtilsTestCase(unittest.TestCase):
@@ -11,11 +12,11 @@ class TicketControllerUtilsTestCase(unittest.TestCase):
 
     def test_detect_file_type_png(self):
         data = b"\x89PNG\r\n\x1a\n" + b"payload"
-        self.assertEqual(TicketController._detect_file_type(data), "png")
+        self.assertEqual(detect_file_type(data), "png")
 
     def test_detect_file_type_unknown(self):
         data = b"plain-text-content"
-        self.assertIsNone(TicketController._detect_file_type(data))
+        self.assertIsNone(detect_file_type(data))
 
 
 if __name__ == "__main__":

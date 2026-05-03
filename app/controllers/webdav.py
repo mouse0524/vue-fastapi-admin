@@ -1,4 +1,6 @@
 import secrets
+import hmac
+import hashlib
 from base64 import b64encode
 from datetime import datetime, timedelta, timezone
 from email.utils import parsedate_to_datetime
@@ -114,6 +116,36 @@ class WebDavController:
         if not data.get("webdav_username") or not data.get("webdav_password"):
             raise HTTPException(status_code=400, detail="WebDAV账号或密码未配置")
         return data
+
+    @staticmethod
+    def _get_signature_secret(conf: dict) -> str:
+        secret = str(conf.get("webdav_signature_secret") or "").strip()
+        if not secret:
+            raise HTTPException(status_code=400, detail="WebDAV分享签名密钥未配置")
+        return secret
+
+    @staticmethod
+    def _sign(secret: str, code: str, ts: int) -> str:
+        msg = f"{code}:{ts}".encode("utf-8")
+        return hmac.new(secret.encode("utf-8"), msg, hashlib.sha256).hexdigest()
+
+    async def build_share_signature(self, *, code: str) -> dict[str, int | str]:
+        conf = await self._get_config()
+        secret = self._get_signature_secret(conf)
+        ts = int(datetime.now(timezone.utc).timestamp())
+        sig = self._sign(secret, code, ts)
+        return {"ts": ts, "sig": sig}
+
+    async def verify_share_signature(self, *, code: str, ts: int, sig: str) -> None:
+        conf = await self._get_config()
+        secret = self._get_signature_secret(conf)
+        signature_ttl = int(conf.get("webdav_signature_ttl") or 600)
+        now_ts = int(datetime.now(timezone.utc).timestamp())
+        if abs(now_ts - int(ts)) > signature_ttl:
+            raise HTTPException(status_code=401, detail="签名已过期")
+        expected = self._sign(secret, code, int(ts))
+        if not hmac.compare_digest(expected, str(sig)):
+            raise HTTPException(status_code=401, detail="签名校验失败")
 
     @staticmethod
     def _build_url(base_url: str, path: str) -> str:
@@ -270,16 +302,28 @@ class WebDavController:
         if "/" in filename or "\\" in filename:
             raise HTTPException(status_code=400, detail="文件名非法")
 
-        data = await file.read()
         target_path = f"{norm_path.rstrip('/')}/{filename}" if norm_path != "/" else f"/{filename}"
         url = self._build_url(conf["webdav_base_url"], target_path)
 
-        logger.info("[webdav.upload] path={} filename={} size={}", norm_path, filename, len(data))
+        chunks: list[bytes] = []
+        total_size = 0
+        chunk_size = 1024 * 1024
+        max_upload_size = int(conf.get("webdav_max_upload_size") or 50 * 1024 * 1024)
+        while True:
+            chunk = await file.read(chunk_size)
+            if not chunk:
+                break
+            total_size += len(chunk)
+            if total_size > max_upload_size:
+                raise HTTPException(status_code=400, detail="文件大小超限")
+            chunks.append(chunk)
+        payload = b"".join(chunks)
+        logger.info("[webdav.upload] path={} filename={} size={}", norm_path, filename, total_size)
         try:
             async with self._client(conf, timeout=180.0) as client:
                 res = await client.put(
                     url,
-                    content=data,
+                    content=payload,
                     headers=self._auth_headers(conf, {"Content-Type": file.content_type or "application/octet-stream"}),
                 )
         except httpx.RequestError as exc:
@@ -391,13 +435,19 @@ class WebDavController:
         logger.info("[webdav.share.delete] share_id={} created_by={}", share_id, created_by)
 
     async def get_share(self, code: str) -> WebDavShareLink:
-        obj = await WebDavShareLink.filter(code=code, is_active=True).first()
+        obj = await WebDavShareLink.filter(code=code).first()
         if not obj:
+            logger.warning("[webdav.share.get] not_found code={}", code)
             raise HTTPException(status_code=404, detail="分享链接不存在")
+        if not obj.is_active:
+            logger.warning("[webdav.share.get] inactive code={} share_id={}", code, obj.id)
+            raise HTTPException(status_code=410, detail="分享链接已失效")
         if self._now_like(obj.expire_time) > obj.expire_time:
             obj.is_active = False
             await obj.save()
+            logger.warning("[webdav.share.get] expired code={} share_id={} expire_time={}", code, obj.id, obj.expire_time)
             raise HTTPException(status_code=410, detail="分享链接已过期")
+        logger.info("[webdav.share.get] ok code={} share_id={} expire_time={}", code, obj.id, obj.expire_time)
         return obj
 
     async def download_stream(self, file_path: str):

@@ -108,12 +108,19 @@ class HttpAuditLogMiddleware(BaseHTTPMiddleware):
             body = response.body
         else:
             body_chunks = []
+            total_size = 0
+            too_large = False
             async for chunk in response.body_iterator:
                 if not isinstance(chunk, bytes):
                     chunk = chunk.encode(response.charset)
+                total_size += len(chunk)
+                if total_size > self.max_body_size:
+                    too_large = True
                 body_chunks.append(chunk)
 
             response.body_iterator = self._async_iter(body_chunks)
+            if too_large:
+                return {"code": 0, "msg": "Response too large to log", "data": None}
             body = b"".join(body_chunks)
 
         if any(request.url.path.startswith(path) for path in self.audit_log_paths):

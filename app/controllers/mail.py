@@ -10,6 +10,7 @@ from email_validator import EmailNotValidError, validate_email
 
 from app.controllers.system_setting import system_setting_controller
 from app.core.redis_client import execute_redis
+from app.log import logger
 from app.models.admin import Ticket, User
 from app.models.enums import TicketStatus
 from app.settings import settings
@@ -53,8 +54,8 @@ class MailController:
         def _done_callback(done_task: asyncio.Task) -> None:
             try:
                 done_task.result()
-            except Exception:
-                pass
+            except Exception as exc:
+                logger.warning("[mail.task] async_send_failed tag={} error={}", tag, str(exc))
 
         task.add_done_callback(_done_callback)
 
@@ -76,15 +77,17 @@ class MailController:
         username = setting.get("smtp_username") or setting.get("smtp_sender")
         try:
             if setting.get("smtp_use_ssl"):
-                server = smtplib.SMTP_SSL(setting.get("smtp_host"), int(setting.get("smtp_port") or 465), timeout=10)
+                with smtplib.SMTP_SSL(setting.get("smtp_host"), int(setting.get("smtp_port") or 465), timeout=10) as server:
+                    if username and setting.get("smtp_password"):
+                        server.login(username, setting.get("smtp_password"))
+                    server.sendmail(setting.get("smtp_sender"), [to_email], msg.as_string())
             else:
-                server = smtplib.SMTP(setting.get("smtp_host"), int(setting.get("smtp_port") or 465), timeout=10)
-            if setting.get("smtp_use_tls") and not setting.get("smtp_use_ssl"):
-                server.starttls()
-            if username and setting.get("smtp_password"):
-                server.login(username, setting.get("smtp_password"))
-            server.sendmail(setting.get("smtp_sender"), [to_email], msg.as_string())
-            server.quit()
+                with smtplib.SMTP(setting.get("smtp_host"), int(setting.get("smtp_port") or 465), timeout=10) as server:
+                    if setting.get("smtp_use_tls"):
+                        server.starttls()
+                    if username and setting.get("smtp_password"):
+                        server.login(username, setting.get("smtp_password"))
+                    server.sendmail(setting.get("smtp_sender"), [to_email], msg.as_string())
         except Exception as exc:
             raise HTTPException(status_code=500, detail=f"发送邮件失败: {exc}")
 
@@ -140,8 +143,8 @@ class MailController:
             await execute_redis(
                 "setex", f"email_verify:{email.lower().strip()}", settings.EMAIL_VERIFY_TTL_SECONDS, code
             )
-        except Exception:
-            pass
+        except Exception as exc:
+            logger.warning("[mail.verify_code] cache_write_failed email={} error={}", email, str(exc))
         self._schedule(
             self._send_email(
                 to_email=email,
@@ -162,8 +165,8 @@ class MailController:
         self._set_local_code(email, code)
         try:
             await execute_redis("setex", f"email_verify:{email.lower().strip()}", settings.EMAIL_VERIFY_TTL_SECONDS, code)
-        except Exception:
-            pass
+        except Exception as exc:
+            logger.warning("[mail.reset_code] cache_write_failed email={} error={}", email, str(exc))
         self._schedule(
             self._send_email(
                 to_email=email,

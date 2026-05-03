@@ -32,8 +32,8 @@ class UserController(CRUDBase[User, UserCreate, UserUpdate]):
                 import json
 
                 return json.loads(cached)
-        except Exception:
-            pass
+        except Exception as exc:
+            logger.warning("[user.basic] cache_read_failed key={} error={}", cache_key, str(exc))
 
         user_obj = await self.get(id=user_id)
         roles = await user_obj.roles
@@ -49,8 +49,8 @@ class UserController(CRUDBase[User, UserCreate, UserUpdate]):
             import json
 
             await execute_redis("setex", cache_key, self.USER_BASIC_CACHE_TTL_SECONDS, json.dumps(data, ensure_ascii=False))
-        except Exception:
-            pass
+        except Exception as exc:
+            logger.warning("[user.basic] cache_write_failed key={} error={}", cache_key, str(exc))
         return data
 
     async def get_by_username(self, username: str) -> Optional[User]:
@@ -138,22 +138,22 @@ class UserController(CRUDBase[User, UserCreate, UserUpdate]):
         keys = [f"perm:menu:user:{user_id}:v1", f"perm:api:user:{user_id}:v1"]
         try:
             await execute_redis("delete", *keys)
-        except Exception:
-            pass
+        except Exception as exc:
+            logger.warning("[user.cache] clear_perm_failed user_id={} error={}", user_id, str(exc))
 
     @staticmethod
     async def clear_admin_flag_cache(user_id: int) -> None:
         try:
             await execute_redis("delete", f"perm:is_admin:user:{user_id}:v1")
-        except Exception:
-            pass
+        except Exception as exc:
+            logger.warning("[user.cache] clear_admin_failed user_id={} error={}", user_id, str(exc))
 
     @staticmethod
     async def clear_user_basic_cache(user_id: int) -> None:
         try:
             await execute_redis("delete", f"user:basic:{user_id}")
-        except Exception:
-            pass
+        except Exception as exc:
+            logger.warning("[user.cache] clear_basic_failed user_id={} error={}", user_id, str(exc))
 
 
 user_controller = UserController()

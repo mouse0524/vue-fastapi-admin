@@ -78,9 +78,8 @@ class TicketGetApiTestCase(unittest.TestCase):
         search_q = call_kwargs.get("search")
         self.assertEqual(getattr(search_q, "join_type", ""), "AND")
         scope_q = search_q.children[-1]
-        self.assertEqual(getattr(scope_q, "join_type", ""), "OR")
-        self.assertEqual(scope_q.children[0].filters.get("tech_id"), 10)
-        self.assertEqual(scope_q.children[1].filters.get("submitter_id"), 10)
+        self.assertEqual(getattr(scope_q, "join_type", ""), "AND")
+        self.assertEqual(scope_q.filters.get("tech_id"), 10)
 
 
 if __name__ == "__main__":

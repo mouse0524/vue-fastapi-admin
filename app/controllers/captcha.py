@@ -9,10 +9,12 @@ import uuid
 from PIL import Image, ImageDraw, ImageFont
 
 from app.core.redis_client import execute_redis
+from app.log import logger
 from app.settings import settings
 
 
 _LOCAL_CAPTCHA_CACHE: dict[str, dict] = {}
+_MAX_LOCAL_CACHE_SIZE = 5000
 
 
 class CaptchaController:
@@ -38,6 +40,9 @@ class CaptchaController:
     @staticmethod
     def _set_local_cache(captcha_id: str, code: str) -> None:
         CaptchaController._cleanup_local_cache()
+        if len(_LOCAL_CAPTCHA_CACHE) >= _MAX_LOCAL_CACHE_SIZE:
+            oldest_key = min(_LOCAL_CAPTCHA_CACHE.items(), key=lambda item: item[1].get("expires_at", 0))[0]
+            _LOCAL_CAPTCHA_CACHE.pop(oldest_key, None)
         _LOCAL_CAPTCHA_CACHE[captcha_id] = {
             "code": code,
             "retry": 0,
@@ -100,8 +105,8 @@ class CaptchaController:
         try:
             await execute_redis("setex", f"captcha:{captcha_id}", settings.CAPTCHA_TTL_SECONDS, normalized_code)
             await execute_redis("setex", f"captcha_retry:{captcha_id}", settings.CAPTCHA_TTL_SECONDS, 0)
-        except Exception:
-            pass
+        except Exception as exc:
+            logger.warning("[captcha.create] cache_write_failed captcha_id={} error={}", captcha_id, str(exc))
         return captcha_id, self._generate_image_base64(code)
 
     async def verify_captcha(self, captcha_id: str, captcha_code: str) -> bool:
@@ -138,7 +143,8 @@ class CaptchaController:
                 ttl = ttl if ttl and ttl > 0 else settings.CAPTCHA_TTL_SECONDS
                 await execute_redis("setex", retry_key, ttl, retry_count)
             return False
-        except Exception:
+        except Exception as exc:
+            logger.warning("[captcha.verify] cache_access_failed captcha_id={} error={}", captcha_id, str(exc))
             return self._verify_local_cache(captcha_id, input_code)
 
 
