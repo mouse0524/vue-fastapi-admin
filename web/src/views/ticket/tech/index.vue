@@ -4,6 +4,7 @@ import { NButton, NCard, NInput, NModal, NSelect, NSpace, NTag } from 'naive-ui'
 import CommonPage from '@/components/page/CommonPage.vue'
 import QueryBarItem from '@/components/query-bar/QueryBarItem.vue'
 import CrudTable from '@/components/table/CrudTable.vue'
+import RichTextEditor from '@/components/editor/RichTextEditor.vue'
 import TicketDetailModal from '@/views/ticket/components/TicketDetailModal.vue'
 import api from '@/api'
 import { ticketStatusOptions, ticketStatusTextMap, ticketStatusTypeMap } from '@/views/ticket/components/ticket-meta'
@@ -13,6 +14,11 @@ defineOptions({ name: '技术处理' })
 const $table = ref(null)
 const queryItems = ref({ status: 'tech_processing' })
 const tableData = ref([])
+const summaryStats = ref({
+  tech_processing: 0,
+  done: 0,
+  tech_rejected: 0,
+})
 const detailVisible = ref(false)
 const currentTicket = ref({})
 const commentVisible = ref(false)
@@ -26,30 +32,30 @@ const selectedRootCause = ref(null)
 const quickFilters = [
   { label: '处理中', value: 'tech_processing' },
   { label: '已完成', value: 'done' },
-  { label: '技术驳回', value: 'tech_reject' },
+  { label: '技术驳回', value: 'tech_rejected' },
 ]
 
 const summaryCards = computed(() => {
-  const rows = tableData.value || []
-  const countByStatus = rows.reduce((acc, item) => {
-    acc[item.status] = (acc[item.status] || 0) + 1
-    return acc
-  }, {})
   return [
-    { label: '处理中', value: countByStatus.tech_processing || 0, tone: 'info' },
-    { label: '已完成', value: countByStatus.done || 0, tone: 'success' },
-    { label: '技术驳回', value: countByStatus.tech_rejected || 0, tone: 'error' },
+    { label: '处理中', value: summaryStats.value.tech_processing || 0, tone: 'info' },
+    { label: '已完成', value: summaryStats.value.done || 0, tone: 'success' },
+    { label: '技术驳回', value: summaryStats.value.tech_rejected || 0, tone: 'error' },
   ]
 })
 
 onMounted(() => {
   $table.value?.handleSearch()
   loadTicketMetaOptions()
+  refreshSummaryStats()
 })
+
+function handleTableDataChange(rows) {
+  tableData.value = Array.isArray(rows) ? rows : []
+}
 
 async function loadTicketMetaOptions() {
   try {
-    const res = await api.getSystemSettings()
+    const res = await api.getPublicConfig()
     const config = res?.data || {}
     projectPhaseOptions.value = (config.ticket_project_phases || []).map((item) => ({ label: item, value: item }))
     categoryOptions.value = (config.ticket_categories || []).map((item) => ({ label: item, value: item }))
@@ -58,6 +64,31 @@ async function loadTicketMetaOptions() {
     rootCauseOptions.value = []
     categoryOptions.value = []
     projectPhaseOptions.value = []
+  }
+}
+
+async function getTicketList(params) {
+  const query = { ...(params || {}) }
+  if (!query.status) {
+    delete query.status
+  }
+  return api.getTicketList(query)
+}
+
+async function refreshSummaryStats() {
+  try {
+    const [processingRes, doneRes, rejectedRes] = await Promise.all([
+      api.getTicketList({ page: 1, page_size: 1, status: 'tech_processing' }),
+      api.getTicketList({ page: 1, page_size: 1, status: 'done' }),
+      api.getTicketList({ page: 1, page_size: 1, status: 'tech_rejected' }),
+    ])
+    summaryStats.value = {
+      tech_processing: Number(processingRes?.total || 0),
+      done: Number(doneRes?.total || 0),
+      tech_rejected: Number(rejectedRes?.total || 0),
+    }
+  } catch (error) {
+    summaryStats.value = { tech_processing: 0, done: 0, tech_rejected: 0 }
   }
 }
 
@@ -74,6 +105,7 @@ async function takeAction(row, action) {
   actionComment.value = ''
   selectedRootCause.value = null
   $table.value?.handleSearch()
+  refreshSummaryStats()
 }
 
 async function openDetail(row) {
@@ -126,39 +158,40 @@ const columns = [
     title: '操作',
     key: 'actions',
     align: 'center',
+    width: 300,
     render(row) {
-      return [
+      const buttons = [
         h(
           NButton,
           {
             size: 'small',
-            quaternary: true,
-            type: 'default',
-            style: 'margin-right: 8px',
+            type: 'info',
             onClick: () => openDetail(row),
           },
           { default: () => '详情' }
         ),
-        ...(row.status !== 'tech_processing'
-          ? []
-          : [
-        h(
-          NButton,
-          {
-            size: 'small',
-            type: 'success',
-            style: 'margin-right: 8px',
-            onClick: () => openTechAction(row, 'finish'),
-          },
-          { default: () => '完成' }
-        ),
-        h(
-          NButton,
-          { size: 'small', type: 'error', onClick: () => openTechAction(row, 'tech_reject') },
-          { default: () => '驳回' }
-        ),
-            ]),
       ]
+      if (row.status === 'tech_processing') {
+        buttons.push(
+          h(
+            NButton,
+            {
+              size: 'small',
+              type: 'success',
+              onClick: () => openTechAction(row, 'finish'),
+            },
+            { default: () => '完成' }
+          )
+        )
+        buttons.push(
+          h(
+            NButton,
+            { size: 'small', type: 'error', onClick: () => openTechAction(row, 'tech_reject') },
+            { default: () => '驳回' }
+          )
+        )
+      }
+      return h('div', { class: 'action-buttons' }, buttons)
     },
   },
 ]
@@ -201,24 +234,36 @@ const columns = [
           ref="$table"
           v-model:query-items="queryItems"
           :columns="columns"
-          :get-data="api.getTicketList"
-          @on-data-change="(rows) => (tableData = rows)"
+          :get-data="getTicketList"
+          @on-data-change="handleTableDataChange"
         >
           <template #queryBar>
             <QueryBarItem label="标题" :label-width="40">
               <NInput v-model:value="queryItems.title" clearable placeholder="输入标题" @keypress.enter="$table?.handleSearch()" />
             </QueryBarItem>
             <QueryBarItem label="分类" :label-width="40">
-              <NSelect v-model:value="queryItems.category" :options="categoryOptions" clearable placeholder="选择分类" />
+              <NSelect v-model:value="queryItems.category" :options="categoryOptions" clearable placeholder="选择分类" style="width: 180px" />
             </QueryBarItem>
             <QueryBarItem label="阶段" :label-width="40">
-              <NSelect v-model:value="queryItems.project_phase" :options="projectPhaseOptions" clearable placeholder="选择阶段" />
+              <NSelect
+                v-model:value="queryItems.project_phase"
+                :options="projectPhaseOptions"
+                clearable
+                placeholder="选择阶段"
+                style="width: 180px"
+              />
             </QueryBarItem>
             <QueryBarItem label="状态" :label-width="40">
-              <NSelect v-model:value="queryItems.status" :options="ticketStatusOptions" clearable placeholder="选择状态" />
+              <NSelect v-model:value="queryItems.status" :options="ticketStatusOptions" clearable placeholder="选择状态" style="width: 180px" />
             </QueryBarItem>
             <QueryBarItem label="根因" :label-width="40">
-              <NSelect v-model:value="queryItems.root_cause" :options="rootCauseOptions" clearable placeholder="选择问题根因" />
+              <NSelect
+                v-model:value="queryItems.root_cause"
+                :options="rootCauseOptions"
+                clearable
+                placeholder="选择问题根因"
+                style="width: 180px"
+              />
             </QueryBarItem>
           </template>
         </CrudTable>
@@ -226,20 +271,23 @@ const columns = [
 
       <TicketDetailModal v-model:visible="detailVisible" :ticket="currentTicket" />
 
-      <NModal v-model:show="commentVisible" preset="card" style="width: 520px" :title="pendingActionType === 'finish' ? '完成备注' : '驳回备注'">
+      <NModal v-model:show="commentVisible" preset="card" style="width: 760px; max-width: 92vw" :title="pendingActionType === 'finish' ? '完成备注' : '驳回备注'">
         <NSelect
           v-if="pendingActionType === 'finish'"
           v-model:value="selectedRootCause"
           class="mb-12"
           :options="rootCauseOptions"
+          :clearable="false"
           placeholder="请选择问题根因"
         />
-        <NInput
-          v-model:value="actionComment"
-          type="textarea"
-          :autosize="{ minRows: 4, maxRows: 6 }"
-          :placeholder="pendingActionType === 'finish' ? '填写处理结果摘要' : '请填写驳回原因'"
+        <RichTextEditor
+          v-model="actionComment"
+          :placeholder="pendingActionType === 'finish' ? '填写处理结果摘要，可直接粘贴图片' : '请填写驳回原因，可直接粘贴图片'"
+          :min-height="180"
+          :max-height="320"
         />
+        <div class="upload-tip" v-if="pendingActionType === 'finish'">技术完成时必须选择问题根因，备注框支持直接粘贴图片。</div>
+        <div class="upload-tip" v-else>备注框支持直接粘贴图片（与提交工单一致）。</div>
         <div class="modal-actions">
           <NButton @click="commentVisible = false">取消</NButton>
           <NButton type="primary" @click="submitTechAction">确认提交</NButton>
@@ -348,11 +396,24 @@ const columns = [
   border-radius: 20px;
 }
 
+.action-buttons {
+  display: flex;
+  justify-content: center;
+  gap: 8px;
+  flex-wrap: nowrap;
+}
+
 .modal-actions {
   display: flex;
   justify-content: flex-end;
   gap: 12px;
   margin-top: 16px;
+}
+
+.upload-tip {
+  margin-top: 8px;
+  color: #6b7280;
+  font-size: 12px;
 }
 
 @media (max-width: 900px) {

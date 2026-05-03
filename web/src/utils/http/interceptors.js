@@ -21,6 +21,9 @@ export function reqReject(error) {
 }
 
 export function resResolve(response) {
+  if (response.config?.responseType === 'blob') {
+    return Promise.resolve(response.data)
+  }
   const { data, status, statusText } = response
   if (data?.code !== 200) {
     const code = data?.code ?? status

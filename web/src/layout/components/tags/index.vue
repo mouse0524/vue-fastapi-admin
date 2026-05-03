@@ -25,12 +25,13 @@
 
 <script setup>
 import ContextMenu from './ContextMenu.vue'
-import { useTagsStore } from '@/store'
+import { useTagsStore, usePermissionStore } from '@/store'
 import ScrollX from '@/components/common/ScrollX.vue'
 
 const route = useRoute()
 const router = useRouter()
 const tagsStore = useTagsStore()
+const permissionStore = usePermissionStore()
 const tabRefs = ref([])
 const scrollXRef = ref(null)
 
@@ -46,6 +47,18 @@ watch(
   () => {
     const { name, fullPath: path } = route
     const title = route.meta?.title
+    const collectPaths = (routes = [], bucket = []) => {
+      routes.forEach((item) => {
+        if (item?.path) bucket.push(item.path)
+        if (Array.isArray(item?.children) && item.children.length) collectPaths(item.children, bucket)
+      })
+      return bucket
+    }
+    const menuPaths = new Set(collectPaths(permissionStore.menus || []))
+    const allowExtra = new Set(['/ticket/my', '/ticket/review', '/ticket/tech'])
+    if (!menuPaths.has(path) && !allowExtra.has(path)) {
+      return
+    }
     tagsStore.addTag({ name, path, title })
   },
   { immediate: true },
@@ -64,6 +77,21 @@ watch(
 )
 
 const handleTagClick = (path) => {
+  const collectPaths = (routes = [], bucket = []) => {
+    routes.forEach((item) => {
+      if (item?.path) bucket.push(item.path)
+      if (Array.isArray(item?.children) && item.children.length) collectPaths(item.children, bucket)
+    })
+    return bucket
+  }
+  const menuPaths = [...new Set(collectPaths(permissionStore.menus || []))]
+  const hasPermissionPath = menuPaths.includes(path)
+
+  if (!hasPermissionPath && path !== '/ticket/my' && path !== '/ticket/review' && path !== '/ticket/tech') {
+    $message.warning('当前账号无该页面权限，无法打开')
+    return
+  }
+
   tagsStore.setActiveTag(path)
   router.push(path)
 }

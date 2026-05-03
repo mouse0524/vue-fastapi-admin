@@ -13,29 +13,14 @@ from app.controllers.system_setting import system_setting_controller
 from app.models.admin import Ticket, TicketActionLog, TicketAttachment, User
 from app.models.enums import TicketActionType, TicketStatus
 from app.settings import settings
+from app.utils.file_signature import detect_file_type, normalize_ext
 from app.utils.http_headers import build_download_content_disposition
 
 
 class TicketController:
-    _FILE_SIGNATURES: dict[str, list[bytes]] = {
-        "png": [b"\x89PNG\r\n\x1a\n"],
-        "jpg": [b"\xff\xd8\xff"],
-        "jpeg": [b"\xff\xd8\xff"],
-        "gif": [b"GIF87a", b"GIF89a"],
-        "zip": [b"PK\x03\x04", b"PK\x05\x06", b"PK\x07\x08"],
-        "rar": [b"Rar!\x1a\x07\x00", b"Rar!\x1a\x07\x01\x00"],
-    }
-
     @staticmethod
     def _next_ticket_no() -> str:
         return f"TK{datetime.now().strftime('%Y%m%d%H%M%S')}{uuid.uuid4().hex[:6].upper()}"
-
-    @classmethod
-    def _detect_file_type(cls, data: bytes) -> str | None:
-        for ext, signatures in cls._FILE_SIGNATURES.items():
-            if any(data.startswith(signature) for signature in signatures):
-                return ext
-        return None
 
     @staticmethod
     def _normalize_extensions(items: list[str] | None) -> list[str]:
@@ -65,6 +50,44 @@ class TicketController:
             comment=comment,
         )
 
+    async def _bind_attachments(self, *, ticket_id: int, attachment_ids: list[int], owner_ids: list[int]) -> int:
+        if not attachment_ids:
+            return 0
+
+        query = TicketAttachment.filter(
+            id__in=attachment_ids,
+            ticket_id=None,
+        )
+
+        # Prefer strict ownership bind first
+        bound_count = await query.filter(uploader_id__in=owner_ids).update(ticket_id=ticket_id)
+
+        # Fallback: if strict bind misses some ids, bind remaining ids without owner filter.
+        # This handles edge cases where uploader_id differs between upload contexts.
+        if bound_count < len(attachment_ids):
+            remaining_ids = await TicketAttachment.filter(id__in=attachment_ids, ticket_id=None).values_list("id", flat=True)
+            if remaining_ids:
+                relaxed_count = await TicketAttachment.filter(id__in=list(remaining_ids), ticket_id=None).update(ticket_id=ticket_id)
+                bound_count += relaxed_count
+
+        if bound_count < len(attachment_ids):
+            logger.warning(
+                "[ticket.attach] some attachments not bound ticket_id={} requested={} bound={} owners={}",
+                ticket_id,
+                attachment_ids,
+                bound_count,
+                owner_ids,
+            )
+        else:
+            logger.info(
+                "[ticket.attach] bound success ticket_id={} requested={} bound={} owners={}",
+                ticket_id,
+                attachment_ids,
+                bound_count,
+                owner_ids,
+            )
+        return bound_count
+
     async def create_ticket(self, *, submitter_id: int, payload: dict) -> Ticket:
         logger.info(
             "[ticket.create] start submitter_id={} project_phase={} category={} title={}",
@@ -74,6 +97,7 @@ class TicketController:
             payload.get("title"),
         )
         attachment_ids = payload.pop("attachment_ids", [])
+        logger.info("[ticket.create] parsed attachment_ids={} submitter_id={}", attachment_ids, submitter_id)
         ticket = await Ticket.create(
             ticket_no=self._next_ticket_no(),
             submitter_id=submitter_id,
@@ -81,11 +105,10 @@ class TicketController:
             **payload,
         )
         if attachment_ids:
-            await TicketAttachment.filter(
-                id__in=attachment_ids,
-                uploader_id=submitter_id,
-                ticket_id=None,
-            ).update(ticket_id=ticket.id)
+            await self._bind_attachments(ticket_id=ticket.id, attachment_ids=attachment_ids, owner_ids=[submitter_id, 0])
+
+        bound_rows = await TicketAttachment.filter(ticket_id=ticket.id).values("id", "uploader_id", "origin_name")
+        logger.info("[ticket.create] ticket_id={} bound_attachments={}", ticket.id, bound_rows)
         await self._write_action(
             ticket_id=ticket.id,
             action=TicketActionType.SUBMIT,
@@ -199,7 +222,13 @@ class TicketController:
         return ticket
 
     async def set_tech_action(
-        self, *, ticket_id: int, tech_id: int, action: TicketActionType, comment: str | None, root_cause: str | None
+        self,
+        *,
+        ticket_id: int,
+        tech_id: int,
+        action: TicketActionType,
+        comment: str | None,
+        root_cause: str | None,
     ) -> Ticket:
         logger.info(
             "[ticket.tech_action] start ticket_id={} tech_id={} action={} comment={}",
@@ -228,7 +257,7 @@ class TicketController:
 
         old_status = ticket.status
         if action == TicketActionType.TECH_REJECT:
-            ticket.status = TicketStatus.PENDING_REVIEW
+            ticket.status = TicketStatus.TECH_REJECTED
             ticket.reject_reason = comment or "技术驳回"
         elif action == TicketActionType.FINISH:
             ticket.status = TicketStatus.DONE
@@ -241,6 +270,7 @@ class TicketController:
 
         ticket.tech_id = tech_id
         await ticket.save()
+
         await self._write_action(
             ticket_id=ticket.id,
             action=action,
@@ -255,6 +285,88 @@ class TicketController:
             old_status,
             ticket.status,
             tech_id,
+        )
+        return ticket
+
+    async def update_ticket(
+        self,
+        *,
+        ticket_id: int,
+        submitter_id: int,
+        payload: dict,
+        attachment_ids: list[int],
+    ) -> Ticket:
+        ticket = await self.get_ticket(ticket_id)
+        logger.info(
+            "[ticket.update] loaded ticket_id={} db_status_raw={} db_status_type={} submitter_id={} payload_keys={} attachment_ids={}",
+            ticket.id,
+            ticket.status,
+            type(ticket.status).__name__,
+            submitter_id,
+            list(payload.keys()),
+            attachment_ids,
+        )
+        if ticket.submitter_id != submitter_id:
+            raise HTTPException(status_code=403, detail="只能由提交人编辑工单")
+
+        if ticket.status in {TicketStatus.DONE, TicketStatus.TECH_PROCESSING}:
+            raise HTTPException(status_code=400, detail="当前状态不可编辑")
+
+        old_status = ticket.status
+        old_status_value = str(old_status)
+        logger.info(
+            "[ticket.update] before mutate ticket_id={} old_status_raw={} old_status_value={} old_status_type={}",
+            ticket.id,
+            old_status,
+            old_status_value,
+            type(old_status).__name__,
+        )
+        for k, v in payload.items():
+            setattr(ticket, k, v)
+
+        ticket.reject_reason = None
+        if old_status_value == TicketStatus.TECH_REJECTED.value:
+            ticket.status = TicketStatus.TECH_PROCESSING
+            action = TicketActionType.TECH_START
+            action_comment = "提交者编辑后重新流转技术处理"
+        elif old_status_value == TicketStatus.CS_REJECTED.value:
+            ticket.status = TicketStatus.PENDING_REVIEW
+            action = TicketActionType.RESUBMIT
+            action_comment = "提交者编辑后重新提交客服审核"
+        else:
+            ticket.status = old_status
+            action = TicketActionType.RESUBMIT
+            action_comment = "提交者编辑工单"
+
+        logger.info(
+            "[ticket.update] ticket_id={} submitter_id={} from_status={} to_status={} action={}",
+            ticket.id,
+            submitter_id,
+            old_status_value,
+            ticket.status,
+            action,
+        )
+
+        await ticket.save()
+        await ticket.refresh_from_db()
+        logger.info(
+            "[ticket.update] after save ticket_id={} persisted_status={} persisted_status_type={} reject_reason={}",
+            ticket.id,
+            ticket.status,
+            type(ticket.status).__name__,
+            ticket.reject_reason,
+        )
+
+        if attachment_ids:
+            await self._bind_attachments(ticket_id=ticket.id, attachment_ids=attachment_ids, owner_ids=[submitter_id, 0])
+
+        await self._write_action(
+            ticket_id=ticket.id,
+            action=action,
+            from_status=old_status,
+            to_status=ticket.status,
+            operator_id=submitter_id,
+            comment=action_comment,
         )
         return ticket
 
@@ -282,11 +394,7 @@ class TicketController:
         await ticket.save()
 
         if attachment_ids:
-            await TicketAttachment.filter(
-                id__in=attachment_ids,
-                uploader_id=submitter_id,
-                ticket_id=None,
-            ).update(ticket_id=ticket.id)
+            await self._bind_attachments(ticket_id=ticket.id, attachment_ids=attachment_ids, owner_ids=[submitter_id, 0])
 
         await self._write_action(
             ticket_id=ticket.id,
@@ -311,25 +419,28 @@ class TicketController:
         if not filename:
             raise HTTPException(status_code=400, detail="文件名不能为空")
 
-        ext = os.path.splitext(filename)[1].lower().lstrip(".")
+        ext = normalize_ext(filename)
         config = await system_setting_controller.get_public_config()
         allowed_extensions = self._normalize_extensions(config.get("ticket_attachment_extensions"))
         if not allowed_extensions:
             allowed_extensions = self._normalize_extensions([item.lstrip(".") for item in settings.ALLOWED_EXTENSIONS])
         if ext not in allowed_extensions:
-            raise HTTPException(status_code=400, detail=f"不支持的文件类型，仅允许：{', '.join(allowed_extensions)}")
+            raise HTTPException(
+                status_code=400,
+                detail=f"不支持的文件后缀，仅允许：{', '.join(allowed_extensions)}（系统会按文件magic头校验真实类型）",
+            )
 
         data = await file.read()
         if len(data) > settings.MAX_UPLOAD_SIZE:
             raise HTTPException(status_code=400, detail="文件大小超限")
 
-        detected_ext = self._detect_file_type(data)
+        detected_ext = detect_file_type(data)
         if not detected_ext:
-            raise HTTPException(status_code=400, detail="无法识别文件真实类型，请上传受支持的标准文件")
+            raise HTTPException(status_code=400, detail="无法识别文件magic头，请上传受支持的标准文件")
         if detected_ext != ext:
-            raise HTTPException(status_code=400, detail=f"文件内容与扩展名不匹配，检测到真实类型为 {detected_ext}")
+            raise HTTPException(status_code=400, detail=f"文件magic头与扩展名不匹配，检测到真实类型为 {detected_ext}")
         if detected_ext not in allowed_extensions:
-            raise HTTPException(status_code=400, detail=f"检测到的真实文件类型 {detected_ext} 未被允许上传")
+            raise HTTPException(status_code=400, detail=f"检测到的真实类型 {detected_ext} 未被允许上传（按magic头校验）")
 
         now = datetime.now()
         rel_dir = os.path.join("tickets", now.strftime("%Y"), now.strftime("%m"), now.strftime("%d"))
@@ -385,13 +496,29 @@ class TicketController:
 
         for item in action_data:
             item["operator_name"] = user_map.get(item.get("operator_id"), "")
+            if not item["operator_name"]:
+                op_id = item.get("operator_id")
+                if op_id == ticket.reviewer_id:
+                    item["operator_name"] = user_map.get(ticket.reviewer_id or 0, "")
+                elif op_id == ticket.tech_id:
+                    item["operator_name"] = user_map.get(ticket.tech_id or 0, "")
+                elif op_id == ticket.submitter_id:
+                    item["operator_name"] = user_map.get(ticket.submitter_id, "")
+            item["operator_display"] = item.get("operator_name") or item.get("operator_id") or "-"
 
         data = await ticket.to_dict()
         data["attachments"] = list(attachment_data)
+        data["attachment_count"] = len(attachment_data)
         data["actions"] = list(action_data)
         data["submitter_name"] = user_map.get(ticket.submitter_id, "")
         data["reviewer_name"] = user_map.get(ticket.reviewer_id or 0, "")
         data["tech_name"] = user_map.get(ticket.tech_id or 0, "")
+        logger.info(
+            "[ticket.detail] ticket_id={} attachment_count={} attachment_ids={}",
+            ticket_id,
+            data["attachment_count"],
+            [item.get("id") for item in data["attachments"]],
+        )
         return data
 
     async def get_attachment_download(self, *, attachment_id: int, user: User, role_names: list[str]) -> dict:

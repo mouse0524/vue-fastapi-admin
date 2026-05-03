@@ -15,7 +15,7 @@ from app.core.dependency import DependAuth
 from app.models.admin import Ticket, TicketActionLog, User
 from app.models.enums import TicketActionType, TicketStatus
 from app.schemas.base import Fail, Success, SuccessExtra
-from app.schemas.tickets import TicketCreate, TicketResubmitIn, TicketReviewIn, TicketTechActionIn
+from app.schemas.tickets import TicketCreate, TicketResubmitIn, TicketReviewIn, TicketTechActionIn, TicketUpdateIn
 
 router = APIRouter()
 
@@ -36,7 +36,9 @@ async def _get_user_role_names(user: User) -> list[str]:
 @router.post("/upload", summary="上传工单附件", dependencies=[DependAuth])
 async def upload_ticket_attachment(file: UploadFile = File(...)):
     user_id = CTX_USER_ID.get()
+    logger.info("[api.ticket.upload] request user_id={} filename={}", user_id, file.filename)
     attachment = await ticket_controller.upload_attachment(uploader_id=user_id, file=file)
+    logger.info("[api.ticket.upload] success user_id={} attachment_id={} path={}", user_id, attachment.id, attachment.file_path)
     return Success(data=await attachment.to_dict())
 
 
@@ -44,11 +46,12 @@ async def upload_ticket_attachment(file: UploadFile = File(...)):
 async def create_ticket(payload: TicketCreate):
     user = await _get_current_user()
     logger.info(
-        "[api.ticket.create] request user_id={} title={} project_phase={} category={}",
+        "[api.ticket.create] request user_id={} title={} project_phase={} category={} attachment_ids={}",
         user.id,
         payload.title,
         payload.project_phase,
         payload.category,
+        payload.attachment_ids,
     )
     role_names = await _get_user_role_names(user)
     if not user.is_superuser and not any(role in role_names for role in ["用户", "渠道商", "代理商", "技术", "管理员"]):
@@ -78,7 +81,7 @@ async def create_ticket(payload: TicketCreate):
 
     body = payload.model_dump(exclude={"captcha_id", "captcha_code"})
     ticket = await ticket_controller.create_ticket(submitter_id=user.id, payload=body)
-    logger.info("[api.ticket.create] success user_id={} ticket_id={}", user.id, ticket.id)
+    logger.info("[api.ticket.create] success user_id={} ticket_id={} attachment_ids={}", user.id, ticket.id, payload.attachment_ids)
     return Success(msg="提交成功", data=await ticket.to_dict())
 
 
@@ -137,7 +140,8 @@ async def list_ticket(
 
     if not user.is_superuser and "管理员" not in role_names and "客服" not in role_names:
         if "技术" in role_names:
-            q &= Q(tech_id=user.id) | Q(submitter_id=user.id)
+            # 技术账号可查看自己提交/已接手工单，以及待技术处理的公共队列工单
+            q &= Q(tech_id=user.id) | Q(submitter_id=user.id) | Q(status=TicketStatus.TECH_PROCESSING)
         else:
             q &= Q(submitter_id=user.id)
     filter_cost_ms = int((perf_counter() - filter_start_at) * 1000)
@@ -171,7 +175,11 @@ async def get_ticket(ticket_id: int = Query(..., description="工单ID")):
     role_names = await _get_user_role_names(user)
     ticket = await Ticket.get(id=ticket_id)
     if not user.is_superuser and "管理员" not in role_names and "客服" not in role_names:
-        if ticket.submitter_id != user.id and ticket.tech_id != user.id:
+        if "技术" in role_names:
+            can_view = ticket.submitter_id == user.id or ticket.tech_id == user.id or ticket.status == TicketStatus.TECH_PROCESSING
+            if not can_view:
+                return Fail(code=403, msg="您暂无权限查看该工单")
+        elif ticket.submitter_id != user.id:
             return Fail(code=403, msg="您暂无权限查看该工单")
     perm_cost_ms = int((perf_counter() - perm_start_at) * 1000)
 
@@ -270,6 +278,54 @@ async def resubmit_ticket(payload: TicketResubmitIn):
     )
     logger.info("[api.ticket.resubmit] success user_id={} ticket_id={} status={}", user.id, ticket.id, ticket.status)
     return Success(msg="重提成功", data=await ticket.to_dict())
+
+
+@router.post("/update", summary="编辑工单", dependencies=[DependAuth])
+async def update_ticket(payload: TicketUpdateIn):
+    user = await _get_current_user()
+    logger.info(
+        "[api.ticket.update] payload user_id={} ticket_id={} captcha_id={} has_captcha_code={} attachment_ids={}",
+        user.id,
+        payload.ticket_id,
+        payload.captcha_id,
+        bool((payload.captcha_code or "").strip()),
+        payload.attachment_ids,
+    )
+    logger.info(
+        "[api.ticket.update] request user_id={} ticket_id={}",
+        user.id,
+        payload.ticket_id,
+    )
+
+    valid = await captcha_controller.verify_captcha(payload.captcha_id, payload.captcha_code)
+    if not valid:
+        logger.warning("[api.ticket.update] captcha_invalid user_id={} ticket_id={}", user.id, payload.ticket_id)
+        return Fail(code=400, msg="验证码错误或已失效，请重试")
+
+    config = await system_setting_controller.get_public_config()
+    project_phases = config.get("ticket_project_phases") or []
+    categories = config.get("ticket_categories") or []
+    if project_phases and payload.project_phase not in project_phases:
+        return Fail(code=400, msg="项目阶段已更新，请刷新页面后重新选择")
+    if categories and payload.category not in categories:
+        return Fail(code=400, msg="问题分类已更新，请刷新页面后重新选择")
+
+    body = payload.model_dump(exclude={"ticket_id", "attachment_ids", "captcha_id", "captcha_code"})
+    logger.info(
+        "[api.ticket.update] sanitized body user_id={} ticket_id={} body_keys={} body_status={}",
+        user.id,
+        payload.ticket_id,
+        list(body.keys()),
+        body.get("status"),
+    )
+    ticket = await ticket_controller.update_ticket(
+        ticket_id=payload.ticket_id,
+        submitter_id=user.id,
+        payload=body,
+        attachment_ids=payload.attachment_ids,
+    )
+    logger.info("[api.ticket.update] success user_id={} ticket_id={} status={}", user.id, ticket.id, ticket.status)
+    return Success(msg="编辑成功", data=await ticket.to_dict())
 
 
 @router.get("/actions", summary="工单操作日志", dependencies=[DependAuth])

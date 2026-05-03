@@ -170,16 +170,6 @@ class SystemSetting(BaseModel, TimestampMixin):
         ],
         description="工单问题描述模板",
     )
-    role_home_pages = fields.JSONField(
-        default=[
-            {"role_name": "管理员", "path": "/system/user"},
-            {"role_name": "客服", "path": "/ticket/review"},
-            {"role_name": "技术", "path": "/ticket/tech"},
-            {"role_name": "用户", "path": "/ticket/my"},
-            {"role_name": "渠道商", "path": "/ticket/my"},
-        ],
-        description="角色默认首页配置",
-    )
     login_security_enabled = fields.BooleanField(default=True, description="是否启用登录安全策略")
     login_account_ip_fail_limit = fields.IntField(default=5, description="账号+IP失败锁定阈值")
     login_account_ip_lock_minutes = fields.IntField(default=60, description="账号+IP锁定时长(分钟)")

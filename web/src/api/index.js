@@ -55,9 +55,14 @@ export default {
   getTicketPrefill: () => request.get('/ticket/prefill'),
   getTicketList: (params = {}) => request.get('/ticket/list', { params }),
   getTicketById: (params = {}) => request.get('/ticket/get', { params }),
+  updateTicket: (data = {}) => request.post('/ticket/update', data),
   reviewTicket: (data = {}) => request.post('/ticket/review', data),
   techActionTicket: (data = {}) => request.post('/ticket/tech/action', data),
-  downloadTicketAttachment: (params = {}) => request.get('/ticket/attachment/download', { params }),
+  downloadTicketAttachment: (params = {}) =>
+    request.get('/ticket/attachment/download', {
+      params,
+      responseType: 'blob',
+    }),
   resubmitTicket: (data = {}) => request.post('/ticket/resubmit', data),
   getTicketActions: (params = {}) => request.get('/ticket/actions', { params }),
   uploadPublicTicketAttachment: (file) => {

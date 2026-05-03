@@ -22,6 +22,7 @@ const uploadLoading = ref(false)
 const submitting = ref(false)
 const captchaImage = ref('')
 const uploadedAttachmentIds = ref([])
+const uploadFileList = ref([])
 const attachmentAccept = ref('.zip,.rar,.png,.jpg,.gif')
 const projectPhaseOptions = ref([
   { label: '售前', value: '售前' },
@@ -142,22 +143,90 @@ function applyDescriptionTemplate(value) {
   form.value.description = value
 }
 
+function isImageName(name) {
+  return /\.(png|jpe?g|gif)$/i.test(String(name || ''))
+}
+
+function buildObjectUrl(rawFile) {
+  if (!rawFile) return ''
+  try {
+    return URL.createObjectURL(rawFile)
+  } catch {
+    return ''
+  }
+}
+
+async function uploadSingleFile(rawFile, targetFile = null) {
+  const res = isAuthed.value ? await api.uploadTicketAttachment(rawFile) : await api.uploadPublicTicketAttachment(rawFile)
+  const attachmentId = Number(res?.data?.id || 0)
+  if (!attachmentId) throw new Error('上传成功但未返回附件ID')
+  if (targetFile) {
+    targetFile.attachmentId = attachmentId
+    if (isImageName(targetFile.name)) {
+      targetFile.url = buildObjectUrl(rawFile)
+    }
+  }
+  uploadedAttachmentIds.value = [...new Set([...uploadedAttachmentIds.value, attachmentId])]
+}
+
 async function customUpload({ file, onFinish, onError }) {
   try {
     uploadLoading.value = true
-    const res = isAuthed.value ? await api.uploadTicketAttachment(file.file) : await api.uploadPublicTicketAttachment(file.file)
-    uploadedAttachmentIds.value.push(res.data.id)
+    await uploadSingleFile(file.file, file)
+    console.log('[ticket.submit] upload success', {
+      isAuthed: isAuthed.value,
+      fileName: file?.name,
+      fileId: file?.id,
+      uploadedAttachmentIds: uploadedAttachmentIds.value,
+    })
     onFinish()
   } catch (error) {
+    console.error('[ticket.submit] upload failed', error)
     onError()
   } finally {
     uploadLoading.value = false
   }
 }
 
+async function handlePasteUpload(event) {
+  const files = Array.from(event?.clipboardData?.files || [])
+  const imageFiles = files.filter((item) => /^image\//.test(item.type || ''))
+  if (!imageFiles.length) return
+  event.preventDefault()
+  for (const rawFile of imageFiles) {
+    if (uploadFileList.value.length >= 5) break
+    const fileName = rawFile.name || `pasted-${Date.now()}.png`
+    const uploadFile = {
+      id: `${Date.now()}-${Math.random()}`,
+      name: fileName,
+      status: 'uploading',
+      file: rawFile,
+      url: buildObjectUrl(rawFile),
+    }
+    uploadFileList.value = [...uploadFileList.value, uploadFile]
+    try {
+      uploadLoading.value = true
+      await uploadSingleFile(rawFile, uploadFile)
+      uploadFile.status = 'finished'
+    } catch {
+      uploadFile.status = 'error'
+    } finally {
+      uploadLoading.value = false
+    }
+  }
+}
+
 function handleRemove({ file }) {
-  const idx = uploadedAttachmentIds.value.findIndex((id) => id === file.id)
-  if (idx >= 0) uploadedAttachmentIds.value.splice(idx, 1)
+  const attachmentId = Number(file?.attachmentId || 0)
+  if (attachmentId > 0) {
+    uploadedAttachmentIds.value = uploadedAttachmentIds.value.filter((id) => id !== attachmentId)
+  }
+  console.log('[ticket.submit] remove file', {
+    fileName: file?.name,
+    fileId: file?.id,
+    attachmentId,
+    uploadedAttachmentIds: uploadedAttachmentIds.value,
+  })
 }
 
 function resetForm() {
@@ -175,6 +244,7 @@ function resetForm() {
     captcha_code: '',
   }
   uploadedAttachmentIds.value = []
+  uploadFileList.value = []
 }
 
 function submit() {
@@ -184,8 +254,13 @@ function submit() {
       submitting.value = true
       const payload = {
         ...form.value,
-        attachment_ids: uploadedAttachmentIds.value,
+        attachment_ids: [...uploadedAttachmentIds.value],
       }
+      console.log('[ticket.submit] submit payload', {
+        isAuthed: isAuthed.value,
+        attachment_ids: payload.attachment_ids,
+        title: payload.title,
+      })
       if (isAuthed.value) {
         await api.createTicket(payload)
       } else {
@@ -318,11 +393,18 @@ function submit() {
             </div>
             <div class="form-grid single-col">
               <NFormItem label="附件">
-                <div class="upload-box">
-                  <NUpload :default-upload="false" :custom-request="customUpload" :max="5" :accept="attachmentAccept" @remove="handleRemove">
+                <div class="upload-box" @paste="handlePasteUpload">
+                  <NUpload
+                    v-model:file-list="uploadFileList"
+                    list-type="image-card"
+                    :custom-request="customUpload"
+                    :max="5"
+                    :accept="attachmentAccept"
+                    @remove="handleRemove"
+                  >
                     <NButton class="upload-btn" :loading="uploadLoading">上传附件</NButton>
                   </NUpload>
-                  <span class="upload-tip">支持最多 5 个附件，当前允许类型：{{ attachmentAccept }}。</span>
+                  <span class="upload-tip">支持最多 5 个附件，支持粘贴图片上传，当前允许类型：{{ attachmentAccept }}。</span>
                 </div>
               </NFormItem>
               <NFormItem label="验证码" path="captcha_code">

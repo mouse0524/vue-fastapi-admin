@@ -23,7 +23,6 @@ export const useAppStore = defineStore('app', {
       ticketProjectPhases: ['售前', '实施', '售后'],
       ticketCategories: ['登录问题', '权限问题', '系统异常', '其他'],
       ticketDescriptionTemplates: ['问题现象：\n复现步骤：\n期望结果：\n实际结果：\n影响范围：'],
-      roleHomePages: [],
       loginSecurityEnabled: true,
       loginAccountIpFailLimit: 5,
       loginAccountIpLockMinutes: 60,
@@ -78,9 +77,6 @@ export const useAppStore = defineStore('app', {
       }
       if (Array.isArray(config.ticket_description_templates) && config.ticket_description_templates.length > 0) {
         this.ticketDescriptionTemplates = config.ticket_description_templates
-      }
-      if (Array.isArray(config.role_home_pages)) {
-        this.roleHomePages = config.role_home_pages
       }
       this.loginSecurityEnabled = typeof config.login_security_enabled === 'boolean' ? config.login_security_enabled : this.loginSecurityEnabled
       this.loginAccountIpFailLimit = config.login_account_ip_fail_limit || this.loginAccountIpFailLimit

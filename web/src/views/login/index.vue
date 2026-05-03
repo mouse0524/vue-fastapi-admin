@@ -356,48 +356,23 @@ function isUsableRoute(path) {
 }
 
 function getDefaultLoginPath() {
-  const roleNames = (userStore.role || []).map((item) => item?.name).filter(Boolean)
-  const configuredPaths = []
-  const configItems = Array.isArray(appStore.roleHomePages) ? appStore.roleHomePages : []
-
   if (userStore.isSuperUser) {
-    configuredPaths.push('/system/user')
+    return '/workbench'
   }
+  const roleNames = (userStore.role || []).map((item) => item?.name).filter(Boolean)
+  if (roleNames.includes('客服')) return '/ticket/review'
+  if (roleNames.includes('技术')) return '/ticket/tech'
+  if (roleNames.includes('用户') || roleNames.includes('渠道商') || roleNames.includes('代理商')) return '/ticket/my'
+  return '/ticket/my'
+}
 
-  roleNames.forEach((roleName) => {
-    configItems.forEach((item) => {
-      if (item?.role_name === roleName && item?.path) {
-        configuredPaths.push(item.path)
-      }
-    })
-  })
-
-  const fallbackPaths = userStore.isSuperUser
-    ? ['/system/user', '/workbench']
-    : roleNames.includes('管理员')
-      ? ['/system/user', '/system/settings', '/workbench']
-      : roleNames.includes('客服')
-        ? ['/ticket/review', '/partner/review', '/workbench']
-        : roleNames.includes('技术')
-          ? ['/ticket/tech', '/ticket/my', '/workbench']
-          : roleNames.includes('用户') || roleNames.includes('渠道商')
-            ? ['/ticket/my', '/workbench']
-            : ['/workbench']
-
-  const preferredPaths = [...new Set([...configuredPaths, ...fallbackPaths])]
-
-  for (const path of preferredPaths) {
-    if (isUsableRoute(path)) return path
+function resolveRoleTargetPath(redirectPath) {
+  const roleDefaultPath = getDefaultLoginPath()
+  if (!isUsableRoute(redirectPath)) return roleDefaultPath
+  if (!userStore.isSuperUser && redirectPath.startsWith('/workbench')) {
+    return roleDefaultPath
   }
-
-  const visibleMenus = permissionStore.menus || []
-  for (const route of visibleMenus) {
-    if (route?.path && route.path !== '/login' && route.path !== '/404' && isUsableRoute(route.path)) {
-      return route.path
-    }
-  }
-
-  return '/workbench'
+  return redirectPath
 }
 
 async function handleLogin() {
@@ -429,7 +404,7 @@ async function handleLogin() {
     setToken(res.data.access_token)
     await addDynamicRoutes()
     const redirectPath = normalizeRedirectPath(query.redirect)
-    const targetPath = isUsableRoute(redirectPath) ? redirectPath : getDefaultLoginPath()
+    const targetPath = resolveRoleTargetPath(redirectPath)
     if (redirectPath) {
       Reflect.deleteProperty(query, 'redirect')
       router.push({ path: targetPath, query })

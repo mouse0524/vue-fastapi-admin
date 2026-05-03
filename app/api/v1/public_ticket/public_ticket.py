@@ -23,11 +23,12 @@ async def upload_public_ticket_attachment(file: UploadFile = File(...)):
 @router.post("/create", summary="游客提交工单")
 async def create_public_ticket(payload: TicketCreate):
     logger.info(
-        "[api.public_ticket.create] request email={} project_phase={} category={} title={}",
+        "[api.public_ticket.create] request email={} project_phase={} category={} title={} attachment_ids={}",
         payload.email,
         payload.project_phase,
         payload.category,
         payload.title,
+        payload.attachment_ids,
     )
     pending = await partner_controller.has_pending_registration(email=payload.email, phone=payload.phone)
     if pending:
@@ -48,7 +49,12 @@ async def create_public_ticket(payload: TicketCreate):
 
     body = payload.model_dump(exclude={"captcha_id", "captcha_code"})
     ticket = await ticket_controller.create_ticket(submitter_id=0, payload=body)
-    logger.info("[api.public_ticket.create] success ticket_id={} ticket_no={}", ticket.id, ticket.ticket_no)
+    logger.info(
+        "[api.public_ticket.create] success ticket_id={} ticket_no={} attachment_ids={}",
+        ticket.id,
+        ticket.ticket_no,
+        payload.attachment_ids,
+    )
     return Success(msg="提交成功", data=await ticket.to_dict())
 
 

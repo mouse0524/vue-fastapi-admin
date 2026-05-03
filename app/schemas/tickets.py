@@ -41,6 +41,21 @@ class TicketResubmitIn(BaseModel):
     captcha_code: str = Field(..., description="验证码")
 
 
+class TicketUpdateIn(BaseModel):
+    ticket_id: int = Field(..., description="工单ID")
+    company_name: str = Field(..., description="公司名称")
+    contact_name: str = Field(..., description="联系人")
+    email: EmailStr = Field(..., description="邮箱")
+    phone: str = Field(..., description="手机号")
+    project_phase: str = Field(..., description="项目阶段")
+    category: str = Field(..., description="问题分类")
+    title: str = Field(..., description="问题标题")
+    description: str = Field(..., description="问题描述")
+    attachment_ids: list[int] = Field(default_factory=list, description="新增附件ID列表")
+    captcha_id: str = Field(..., description="验证码ID")
+    captcha_code: str = Field(..., description="验证码")
+
+
 class TicketUploadOut(BaseModel):
     attachment_id: int
     origin_name: str

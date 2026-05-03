@@ -392,6 +392,24 @@ async def init_roles():
         "客服": "客服角色",
     }
 
+    role_names = list(role_desc_map.keys())
+    existing_roles = await Role.filter(name__in=role_names).all()
+    existing_role_names = {role.name for role in existing_roles}
+    missing_roles = [name for name in role_names if name not in existing_role_names]
+
+    if not missing_roles:
+        has_role_bindings = False
+        for role in existing_roles:
+            has_menu_binding = await role.menus.all().first() is not None
+            has_api_binding = await role.apis.all().first() is not None
+            if has_menu_binding or has_api_binding:
+                has_role_bindings = True
+                break
+
+        if has_role_bindings:
+            logger.info("[init_roles] detected existing role permissions, skip default role permission backfill")
+            return
+
     role_map: dict[str, Role] = {}
     for role_name, role_desc in role_desc_map.items():
         role_obj, _ = await Role.get_or_create(name=role_name, defaults={"desc": role_desc})

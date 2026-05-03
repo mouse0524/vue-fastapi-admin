@@ -13,6 +13,11 @@ defineOptions({ name: '工单审核' })
 const $table = ref(null)
 const queryItems = ref({ status: 'pending_review' })
 const tableData = ref([])
+const summaryStats = ref({
+  pending_review: 0,
+  cs_rejected: 0,
+  tech_processing: 0,
+})
 const detailVisible = ref(false)
 const currentTicket = ref({})
 const commentVisible = ref(false)
@@ -29,26 +34,43 @@ const quickFilters = [
 ]
 
 const summaryCards = computed(() => {
-  const rows = tableData.value || []
-  const countByStatus = rows.reduce((acc, item) => {
-    acc[item.status] = (acc[item.status] || 0) + 1
-    return acc
-  }, {})
   return [
-    { label: '待审核工单', value: countByStatus.pending_review || 0, tone: 'warning' },
-    { label: '已驳回', value: countByStatus.cs_rejected || 0, tone: 'error' },
-    { label: '已流转技术', value: countByStatus.tech_processing || 0, tone: 'info' },
+    { label: '待审核工单', value: summaryStats.value.pending_review || 0, tone: 'warning' },
+    { label: '已驳回', value: summaryStats.value.cs_rejected || 0, tone: 'error' },
+    { label: '已流转技术', value: summaryStats.value.tech_processing || 0, tone: 'info' },
   ]
 })
 
 onMounted(() => {
   $table.value?.handleSearch()
   loadTicketMetaOptions()
+  refreshSummaryStats()
 })
+
+function handleTableDataChange(rows) {
+  tableData.value = Array.isArray(rows) ? rows : []
+}
+
+async function refreshSummaryStats() {
+  try {
+    const [pendingRes, rejectedRes, techRes] = await Promise.all([
+      api.getTicketList({ page: 1, page_size: 1, status: 'pending_review' }),
+      api.getTicketList({ page: 1, page_size: 1, status: 'cs_rejected' }),
+      api.getTicketList({ page: 1, page_size: 1, status: 'tech_processing' }),
+    ])
+    summaryStats.value = {
+      pending_review: Number(pendingRes?.total || 0),
+      cs_rejected: Number(rejectedRes?.total || 0),
+      tech_processing: Number(techRes?.total || 0),
+    }
+  } catch (error) {
+    summaryStats.value = { pending_review: 0, cs_rejected: 0, tech_processing: 0 }
+  }
+}
 
 async function loadTicketMetaOptions() {
   try {
-    const res = await api.getSystemSettings()
+    const res = await api.getPublicConfig()
     const config = res?.data || {}
     projectPhaseOptions.value = (config.ticket_project_phases || []).map((item) => ({ label: item, value: item }))
     categoryOptions.value = (config.ticket_categories || []).map((item) => ({ label: item, value: item }))
@@ -71,6 +93,7 @@ async function review(row, approved) {
   pendingReviewRow.value = null
   reviewComment.value = ''
   $table.value?.handleSearch()
+  refreshSummaryStats()
 }
 
 async function openDetail(row) {
@@ -98,7 +121,14 @@ async function submitReviewAction() {
 
 const columns = [
   { title: '工单编号', key: 'ticket_no', align: 'center' },
-  { title: '提交人', key: 'submitter_id', align: 'center' },
+  {
+    title: '提交人',
+    key: 'submitter_name',
+    align: 'center',
+    render(row) {
+      return row.submitter_name || row.submitter_id || '-'
+    },
+  },
   { title: '标题', key: 'title', align: 'center', ellipsis: { tooltip: true } },
   { title: '项目阶段', key: 'project_phase', align: 'center' },
   { title: '分类', key: 'category', align: 'center' },
@@ -115,39 +145,40 @@ const columns = [
     title: '操作',
     key: 'actions',
     align: 'center',
+    width: 300,
     render(row) {
-      return [
+      const buttons = [
         h(
           NButton,
           {
             size: 'small',
-            quaternary: true,
-            type: 'default',
-            style: 'margin-right: 8px',
+            type: 'info',
             onClick: () => openDetail(row),
           },
           { default: () => '详情' }
         ),
-        ...(row.status !== 'pending_review'
-          ? []
-          : [
-        h(
-          NButton,
-          {
-            size: 'small',
-            type: 'primary',
-            style: 'margin-right: 8px',
-            onClick: () => openReviewAction(row, true),
-          },
-          { default: () => '通过' }
-        ),
-        h(
-          NButton,
-          { size: 'small', type: 'error', onClick: () => openReviewAction(row, false) },
-          { default: () => '驳回' }
-        ),
-            ]),
       ]
+      if (row.status === 'pending_review') {
+        buttons.push(
+          h(
+            NButton,
+            {
+              size: 'small',
+              type: 'success',
+              onClick: () => openReviewAction(row, true),
+            },
+            { default: () => '通过' }
+          )
+        )
+        buttons.push(
+          h(
+            NButton,
+            { size: 'small', type: 'error', onClick: () => openReviewAction(row, false) },
+            { default: () => '驳回' }
+          )
+        )
+      }
+      return h('div', { class: 'action-buttons' }, buttons)
     },
   },
 ]
@@ -191,23 +222,35 @@ const columns = [
           v-model:query-items="queryItems"
           :columns="columns"
           :get-data="api.getTicketList"
-          @on-data-change="(rows) => (tableData = rows)"
+          @on-data-change="handleTableDataChange"
         >
           <template #queryBar>
             <QueryBarItem label="标题" :label-width="40">
               <NInput v-model:value="queryItems.title" clearable placeholder="输入标题" @keypress.enter="$table?.handleSearch()" />
             </QueryBarItem>
             <QueryBarItem label="分类" :label-width="40">
-              <NSelect v-model:value="queryItems.category" :options="categoryOptions" clearable placeholder="选择分类" />
+              <NSelect v-model:value="queryItems.category" :options="categoryOptions" clearable placeholder="选择分类" style="width: 180px" />
             </QueryBarItem>
             <QueryBarItem label="阶段" :label-width="40">
-              <NSelect v-model:value="queryItems.project_phase" :options="projectPhaseOptions" clearable placeholder="选择阶段" />
+              <NSelect
+                v-model:value="queryItems.project_phase"
+                :options="projectPhaseOptions"
+                clearable
+                placeholder="选择阶段"
+                style="width: 180px"
+              />
             </QueryBarItem>
             <QueryBarItem label="状态" :label-width="40">
-              <NSelect v-model:value="queryItems.status" :options="ticketStatusOptions" clearable placeholder="选择状态" />
+              <NSelect v-model:value="queryItems.status" :options="ticketStatusOptions" clearable placeholder="选择状态" style="width: 180px" />
             </QueryBarItem>
             <QueryBarItem label="根因" :label-width="40">
-              <NSelect v-model:value="queryItems.root_cause" :options="rootCauseOptions" clearable placeholder="选择问题根因" />
+              <NSelect
+                v-model:value="queryItems.root_cause"
+                :options="rootCauseOptions"
+                clearable
+                placeholder="选择问题根因"
+                style="width: 180px"
+              />
             </QueryBarItem>
           </template>
         </CrudTable>
@@ -328,6 +371,13 @@ const columns = [
 
 .table-shell {
   border-radius: 20px;
+}
+
+.action-buttons {
+  display: flex;
+  justify-content: center;
+  gap: 8px;
+  flex-wrap: nowrap;
 }
 
 .modal-actions {

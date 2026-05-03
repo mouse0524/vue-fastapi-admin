@@ -6,6 +6,9 @@ venv/
 .ruff_cache/
 .pytest_cache/
 migrations/
+storage/
+
+
 
 db.sqlite3
 db.sqlite3-journal

@@ -10,7 +10,6 @@ class SystemSettingUpdateIn(BaseModel):
     ticket_categories: list[str] = Field(default_factory=list, description="工单分类")
     ticket_root_causes: list[str] = Field(default_factory=list, description="工单问题根因")
     ticket_description_templates: list[str] = Field(default_factory=list, description="工单问题描述模板")
-    role_home_pages: list[dict] = Field(default_factory=list, description="角色默认首页配置")
     login_security_enabled: bool = Field(default=True, description="是否启用登录安全策略")
     login_account_ip_fail_limit: int = Field(default=5, description="账号+IP失败锁定阈值")
     login_account_ip_lock_minutes: int = Field(default=60, description="账号+IP锁定时长(分钟)")
@@ -68,23 +67,6 @@ class SystemSettingUpdateIn(BaseModel):
             raise ValueError(f"{field_name}至少保留一项")
         return items
 
-    @field_validator("role_home_pages")
-    @classmethod
-    def validate_role_home_pages(cls, value: list[dict]):
-        cleaned = []
-        seen_roles: set[str] = set()
-        for item in value:
-            if not isinstance(item, dict):
-                continue
-            role_name = str(item.get("role_name") or "").strip()
-            path = str(item.get("path") or "").strip()
-            if role_name and path:
-                if role_name in seen_roles:
-                    raise ValueError(f"角色默认首页存在重复配置：{role_name}")
-                seen_roles.add(role_name)
-                cleaned.append({"role_name": role_name, "path": path})
-        return cleaned
-
     @field_validator(
         "login_account_ip_fail_limit",
         "login_account_ip_lock_minutes",
@@ -107,7 +89,6 @@ class PublicSiteConfigOut(BaseModel):
     ticket_project_phases: list[str]
     ticket_categories: list[str]
     ticket_description_templates: list[str]
-    role_home_pages: list[dict]
     login_security_enabled: bool
     login_account_ip_fail_limit: int
     login_account_ip_lock_minutes: int

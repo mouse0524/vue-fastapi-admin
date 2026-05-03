@@ -9,6 +9,7 @@ from fastapi import HTTPException, UploadFile
 from app.log import logger
 from app.models.admin import SystemSetting
 from app.settings import settings
+from app.utils.file_signature import detect_file_type, normalize_ext
 
 
 class SystemSettingController:
@@ -45,7 +46,6 @@ class SystemSettingController:
             "ticket_categories": data.get("ticket_categories") or [],
             "ticket_root_causes": data.get("ticket_root_causes") or [],
             "ticket_description_templates": data.get("ticket_description_templates") or [],
-            "role_home_pages": data.get("role_home_pages") or [],
             "login_security_enabled": data.get("login_security_enabled", True),
             "login_account_ip_fail_limit": data.get("login_account_ip_fail_limit", 5),
             "login_account_ip_lock_minutes": data.get("login_account_ip_lock_minutes", 60),
@@ -125,20 +125,28 @@ class SystemSettingController:
 
     async def upload_logo(self, file: UploadFile) -> str:
         logger.info("[settings.logo] start filename={} content_type={}", file.filename, file.content_type)
-        ext = os.path.splitext(file.filename or "")[1].lower()
-        if ext not in {".jpg", ".jpeg", ".png", ".webp", ".svg"}:
-            raise HTTPException(status_code=400, detail="Logo仅支持 jpg/jpeg/png/webp/svg")
+        ext = normalize_ext(file.filename or "")
+        if ext not in {"jpg", "jpeg", "png", "webp"}:
+            raise HTTPException(status_code=400, detail="Logo仅支持 jpg/jpeg/png/webp（并按magic头校验）")
 
         data = await file.read()
         if len(data) > settings.MAX_UPLOAD_SIZE:
             raise HTTPException(status_code=400, detail="Logo文件大小超限")
+
+        detected_ext = detect_file_type(data)
+        if not detected_ext:
+            raise HTTPException(status_code=400, detail="无法识别Logo magic头")
+        if detected_ext == "svg":
+            raise HTTPException(status_code=400, detail="Logo不支持SVG（无法通过magic头可靠校验）")
+        if detected_ext != ext and not ({detected_ext, ext} <= {"jpg", "jpeg"}):
+            raise HTTPException(status_code=400, detail=f"Logo文件magic头与扩展名不匹配，检测到真实类型为 {detected_ext}")
 
         now = datetime.now()
         rel_dir = os.path.join("site", "logo", now.strftime("%Y"), now.strftime("%m"), now.strftime("%d"))
         abs_dir = os.path.join(settings.UPLOAD_DIR, rel_dir)
         os.makedirs(abs_dir, exist_ok=True)
 
-        filename = f"{uuid.uuid4().hex}{ext}"
+        filename = f"{uuid.uuid4().hex}.{ext}"
         rel_path = os.path.join(rel_dir, filename).replace("\\", "/")
         abs_path = os.path.join(settings.UPLOAD_DIR, rel_path)
 

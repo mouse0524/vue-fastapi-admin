@@ -1,7 +1,8 @@
 <script setup>
-import { computed } from 'vue'
+import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import { NButton, NEmpty, NTag } from 'naive-ui'
 import CrudModal from '@/components/table/CrudModal.vue'
+import api from '@/api'
 import { mapTicketActionText, ticketStatusTextMap, ticketStatusTypeMap } from './ticket-meta'
 
 defineEmits(['update:visible'])
@@ -20,17 +21,77 @@ const props = defineProps({
 })
 
 const attachments = computed(() => props.ticket?.attachments || [])
+const imageAttachments = computed(() => attachments.value.filter((item) => /\.(png|jpe?g|gif)$/i.test(item.origin_name || item.file_path || '')))
+const imagePreviewMap = ref({})
 
-function openAttachment(item) {
+function revokeImagePreviewUrls() {
+  Object.values(imagePreviewMap.value || {}).forEach((url) => {
+    if (url) URL.revokeObjectURL(url)
+  })
+}
+
+function getImagePreviewUrl(item) {
+  return imagePreviewMap.value[item.id] || ''
+}
+
+watch(
+  () => [props.visible, props.ticket?.id, imageAttachments.value.length],
+  async ([visible]) => {
+    if (!visible) {
+      revokeImagePreviewUrls()
+      imagePreviewMap.value = {}
+      return
+    }
+    revokeImagePreviewUrls()
+    const nextMap = {}
+    for (const item of imageAttachments.value) {
+      try {
+        const res = await api.downloadTicketAttachment({ attachment_id: item.id })
+        const blob = res instanceof Blob ? res : new Blob([res])
+        nextMap[item.id] = URL.createObjectURL(blob)
+      } catch {
+        nextMap[item.id] = ''
+      }
+    }
+    imagePreviewMap.value = nextMap
+  },
+  { immediate: true }
+)
+
+onBeforeUnmount(() => {
+  revokeImagePreviewUrls()
+  imagePreviewMap.value = {}
+})
+
+async function openAttachment(item) {
   if (!item?.id) return
-  const url = `/api/v1/ticket/attachment/download?attachment_id=${encodeURIComponent(item.id)}`
-  window.open(url, '_blank')
+  const res = await api.downloadTicketAttachment({ attachment_id: item.id })
+  const blob = res instanceof Blob ? res : new Blob([res])
+  const url = window.URL.createObjectURL(blob)
+  const link = document.createElement('a')
+  link.href = url
+  link.download = item.origin_name || `attachment-${item.id}`
+  document.body.appendChild(link)
+  link.click()
+  link.remove()
+  window.URL.revokeObjectURL(url)
 }
 
 async function copyText(text, successText) {
   if (!text) return
   await navigator.clipboard.writeText(String(text))
   $message.success(successText)
+}
+
+async function copyImage(item) {
+  const res = await api.downloadTicketAttachment({ attachment_id: item.id })
+  const blob = res instanceof Blob ? res : new Blob([res])
+  if (!blob.type.startsWith('image/')) {
+    $message.warning('仅支持复制图片附件')
+    return
+  }
+  await navigator.clipboard.write([new ClipboardItem({ [blob.type]: blob })])
+  $message.success('图片已复制')
 }
 
 function renderActionContent(item) {
@@ -41,6 +102,27 @@ function renderActionContent(item) {
   }
   return item.comment || '-'
 }
+
+function isRejectAction(action) {
+  return action === 'cs_reject' || action === 'tech_reject'
+}
+
+function getActionIcon(action) {
+  if (action === 'finish') return 'finish'
+  if (action === 'submit' || action === 'resubmit') return 'submit'
+  if (action === 'tech_start') return 'handle'
+  if (isRejectAction(action)) return 'reject'
+  return 'pass'
+}
+
+function getActionIconClass(action) {
+  if (isRejectAction(action)) return 'is-reject'
+  if (action === 'finish') return 'is-finish'
+  if (action === 'submit' || action === 'resubmit') return 'is-submit'
+  if (action === 'tech_start') return 'is-handle'
+  return 'is-pass'
+}
+
 </script>
 
 <template>
@@ -51,7 +133,8 @@ function renderActionContent(item) {
         <div class="detail-title">{{ ticket.title }}</div>
         <div class="detail-actions">
           <NButton size="tiny" quaternary type="primary" @click="copyText(ticket.ticket_no, '工单编号已复制')">复制编号</NButton>
-          <NButton size="tiny" quaternary type="primary" @click="copyText(ticket.description, '问题描述已复制')">复制描述</NButton>
+          <NButton size="tiny" quaternary type="primary" @click="copyText((ticket.description || '').replace(/<[^>]+>/g, ' ').replace(/&nbsp;/gi, ' ').replace(/\s+/g, ' ').trim(), '描述文本已复制')">复制文本</NButton>
+          <NButton size="tiny" quaternary type="primary" @click="copyText(ticket.description, '描述HTML已复制')">复制HTML</NButton>
         </div>
       </div>
       <NTag :type="ticketStatusTypeMap[ticket.status] || 'default'">{{ ticketStatusTextMap[ticket.status] || '-' }}</NTag>
@@ -84,15 +167,15 @@ function renderActionContent(item) {
       </div>
       <div class="detail-card">
         <span>附件数量</span>
-        <strong>{{ attachments.length }}</strong>
+        <strong>{{ ticket.attachment_count ?? attachments.length }}</strong>
       </div>
       <div class="detail-card">
         <span>客服审核人</span>
-        <strong>{{ ticket.reviewer_id || '-' }}</strong>
+        <strong>{{ ticket.reviewer_name || ticket.reviewer_id || '-' }}</strong>
       </div>
       <div class="detail-card">
         <span>技术处理人</span>
-        <strong>{{ ticket.tech_id || '-' }}</strong>
+        <strong>{{ ticket.tech_name || ticket.tech_id || '-' }}</strong>
       </div>
       <div class="detail-card">
         <span>问题根因</span>
@@ -111,13 +194,28 @@ function renderActionContent(item) {
 
     <div class="attachment-card">
       <div class="section-title">附件列表</div>
+      <div v-if="imageAttachments.length" class="image-preview-grid">
+        <a
+          v-for="item in imageAttachments"
+          :key="`img-${item.id}`"
+          :href="getImagePreviewUrl(item)"
+          target="_blank"
+          rel="noopener"
+          class="image-preview-item"
+        >
+          <img :src="getImagePreviewUrl(item)" :alt="item.origin_name || `image-${item.id}`" />
+        </a>
+      </div>
       <div v-if="attachments.length" class="attachment-list">
         <div v-for="item in attachments" :key="item.id" class="attachment-item">
           <div>
             <div class="attachment-name">{{ item.origin_name || item.file_path }}</div>
             <div class="attachment-meta">{{ item.mime_type || 'application/octet-stream' }} / {{ item.file_size || 0 }} bytes</div>
           </div>
-          <NButton size="small" type="primary" quaternary @click="openAttachment(item)">下载</NButton>
+          <div class="attachment-actions">
+            <NButton v-if="/\.(png|jpe?g|gif)$/i.test(item.origin_name || item.file_path || '')" size="small" type="info" quaternary @click="copyImage(item)">复制图片</NButton>
+            <NButton size="small" type="primary" quaternary @click="openAttachment(item)">下载</NButton>
+          </div>
         </div>
       </div>
       <NEmpty v-else description="暂无附件" size="small" />
@@ -130,9 +228,36 @@ function renderActionContent(item) {
           v-for="item in ticket.actions || []"
           :key="item.id"
           :title="mapTicketActionText(item.action)"
-          :content="renderActionContent(item)"
-          :time="item.created_at"
-        />
+          :type="isRejectAction(item.action) ? 'error' : 'success'"
+        >
+          <template #icon>
+            <span class="timeline-icon" :class="getActionIconClass(item.action)">
+              <svg v-if="getActionIcon(item.action) === 'finish'" viewBox="0 0 24 24" aria-hidden="true">
+                <path d="M5 12.5l3.2 3.2L14 10" />
+                <path d="M10 12.5l3.2 3.2L19 10" />
+              </svg>
+              <svg v-else-if="getActionIcon(item.action) === 'submit'" viewBox="0 0 24 24" aria-hidden="true">
+                <circle cx="12" cy="12" r="3.5" fill="currentColor" stroke="none" />
+              </svg>
+              <svg v-else-if="getActionIcon(item.action) === 'handle'" viewBox="0 0 24 24" aria-hidden="true">
+                <path d="M16.5 7.5A6 6 0 1 0 18 12" />
+                <path d="M16.5 4.5v3h-3" />
+              </svg>
+              <svg v-else-if="getActionIcon(item.action) === 'reject'" viewBox="0 0 24 24" aria-hidden="true">
+                <path d="M8 8l8 8" />
+                <path d="M16 8l-8 8" />
+              </svg>
+              <svg v-else viewBox="0 0 24 24" aria-hidden="true">
+                <path d="M6 12.5l4 4L18 8.5" />
+              </svg>
+            </span>
+          </template>
+          <div class="timeline-content">
+            <div class="timeline-comment" v-html="renderActionContent(item)"></div>
+            <div class="timeline-meta">操作者：{{ item.operator_display || item.operator_name || item.operator_id || '-' }}</div>
+            <div v-if="item.created_at" class="timeline-meta">时间：{{ item.created_at }}</div>
+          </div>
+        </n-timeline-item>
       </n-timeline>
     </div>
   </CrudModal>
@@ -221,6 +346,151 @@ function renderActionContent(item) {
   margin-top: 10px;
 }
 
+.timeline-content {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.timeline-comment {
+  color: #374151;
+  line-height: 1.7;
+  word-break: break-word;
+}
+
+.timeline-comment :deep(img) {
+  max-width: min(100%, 420px);
+  border-radius: 8px;
+  border: 1px solid #e5e7eb;
+  display: block;
+  margin-top: 6px;
+}
+
+.timeline-meta {
+  color: #6b7280;
+  font-size: 12px;
+}
+
+.timeline-icon {
+  display: inline-flex;
+  width: 26px;
+  height: 26px;
+  min-width: 26px;
+  min-height: 26px;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999px;
+  color: #fff;
+  line-height: 1;
+}
+
+.timeline-icon svg {
+  width: 16px;
+  height: 16px;
+  display: block;
+  stroke: currentColor;
+  stroke-width: 2.2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  fill: none;
+}
+
+.timeline-icon.is-pass {
+  background: #16a34a;
+  animation: timelinePop 0.28s ease-out, timelineGlowPass 1.3s ease-out;
+}
+
+.timeline-icon.is-finish {
+  background: #0ea5e9;
+  animation: timelinePop 0.28s ease-out, timelineGlowFinish 1.3s ease-out;
+}
+
+.timeline-icon.is-submit {
+  background: #6b7280;
+  animation: timelinePop 0.28s ease-out, timelineGlowSubmit 1.3s ease-out;
+}
+
+.timeline-icon.is-handle {
+  background: #f59e0b;
+  animation: timelinePop 0.28s ease-out, timelineGlowHandle 1.3s ease-out;
+}
+
+.timeline-icon.is-handle svg {
+  animation: timelineSpinIn 0.42s ease-out;
+}
+
+.timeline-icon.is-reject {
+  background: #dc2626;
+  animation: timelinePop 0.28s ease-out, timelineGlowReject 1.3s ease-out;
+}
+
+@keyframes timelinePop {
+  0% {
+    transform: scale(0.72);
+    opacity: 0.68;
+  }
+  100% {
+    transform: scale(1);
+    opacity: 1;
+  }
+}
+
+@keyframes timelineGlowPass {
+  0% {
+    box-shadow: 0 0 0 0 rgba(22, 163, 74, 0.45);
+  }
+  100% {
+    box-shadow: 0 0 0 10px rgba(22, 163, 74, 0);
+  }
+}
+
+@keyframes timelineGlowReject {
+  0% {
+    box-shadow: 0 0 0 0 rgba(220, 38, 38, 0.45);
+  }
+  100% {
+    box-shadow: 0 0 0 10px rgba(220, 38, 38, 0);
+  }
+}
+
+@keyframes timelineGlowFinish {
+  0% {
+    box-shadow: 0 0 0 0 rgba(14, 165, 233, 0.45);
+  }
+  100% {
+    box-shadow: 0 0 0 10px rgba(14, 165, 233, 0);
+  }
+}
+
+@keyframes timelineGlowSubmit {
+  0% {
+    box-shadow: 0 0 0 0 rgba(107, 114, 128, 0.45);
+  }
+  100% {
+    box-shadow: 0 0 0 10px rgba(107, 114, 128, 0);
+  }
+}
+
+@keyframes timelineGlowHandle {
+  0% {
+    box-shadow: 0 0 0 0 rgba(245, 158, 11, 0.45);
+  }
+  100% {
+    box-shadow: 0 0 0 10px rgba(245, 158, 11, 0);
+  }
+}
+
+@keyframes timelineSpinIn {
+  0% {
+    transform: rotate(-120deg) scale(0.78);
+    opacity: 0.45;
+  }
+  100% {
+    transform: rotate(0deg) scale(1);
+    opacity: 1;
+  }
+}
+
 .attachment-list {
   display: flex;
   flex-direction: column;
@@ -237,6 +507,34 @@ function renderActionContent(item) {
   border-radius: 14px;
   background: #fff;
   border: 1px solid #e5e7eb;
+}
+
+.attachment-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.image-preview-grid {
+  margin-top: 12px;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
+  gap: 10px;
+}
+
+.image-preview-item {
+  display: block;
+  border-radius: 10px;
+  overflow: hidden;
+  border: 1px solid #e5e7eb;
+  background: #fff;
+}
+
+.image-preview-item img {
+  width: 100%;
+  height: 120px;
+  object-fit: cover;
+  display: block;
 }
 
 .attachment-name {

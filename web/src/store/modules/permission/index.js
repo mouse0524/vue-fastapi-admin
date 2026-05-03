@@ -1,6 +1,8 @@
 import { defineStore } from 'pinia'
 import { basicRoutes, vueModules } from '@/router/routes'
 import Layout from '@/layout/index.vue'
+import { useUserStore } from '@/store'
+import { useTagsStore } from '@/store'
 import api from '@/api'
 
 // * 后端路由相关函数
@@ -80,7 +82,10 @@ export const usePermissionStore = defineStore('permission', {
       return basicRoutes.concat(this.accessRoutes)
     },
     menus() {
-      return this.routes.filter((route) => route.name && !route.isHidden)
+      const userStore = useUserStore()
+      return this.routes
+        .filter((route) => route.name && !route.isHidden)
+        .filter((route) => !(route.path === '/workbench' && !userStore.isSuperUser))
     },
     apis() {
       return this.accessApis
@@ -90,6 +95,8 @@ export const usePermissionStore = defineStore('permission', {
     async generateRoutes() {
       const res = await api.getUserMenu() // 调用接口获取后端传来的菜单路由
       this.accessRoutes = buildRoutes(res.data) // 处理成前端路由格式
+      const tagsStore = useTagsStore()
+      tagsStore.sanitizeByMenus(this.menus)
       return this.accessRoutes
     },
     async getAccessApis() {

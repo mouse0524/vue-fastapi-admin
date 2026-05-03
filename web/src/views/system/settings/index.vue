@@ -11,7 +11,6 @@ import {
   NInput,
   NInputNumber,
   NModal,
-  NSelect,
   NSwitch,
   NTabPane,
   NTabs,
@@ -30,8 +29,6 @@ const webdavTesting = ref(false)
 const logoUploading = ref(false)
 const previewVisible = ref(false)
 const appStore = useAppStore()
-const roleOptions = ref([])
-const menuOptions = ref([])
 const form = ref({
   site_title: 'Vue FastAPI Admin',
   site_logo: '',
@@ -41,7 +38,6 @@ const form = ref({
   ticket_categories: ['登录问题', '权限问题', '系统异常', '其他'],
   ticket_root_causes: ['代码缺陷', '配置错误', '环境异常', '数据问题', '操作不当', '第三方依赖'],
   ticket_description_templates: ['问题现象：\n复现步骤：\n期望结果：\n实际结果：\n影响范围：'],
-  role_home_pages: [],
   login_security_enabled: true,
   login_account_ip_fail_limit: 5,
   login_account_ip_lock_minutes: 60,
@@ -168,21 +164,6 @@ const rules = {
     },
     trigger: ['change', 'blur'],
   },
-  role_home_pages: {
-    validator: () => {
-      const items = form.value.role_home_pages || []
-      const roleNames = items.map((item) => String(item?.role_name || '').trim()).filter(Boolean)
-      const paths = items.map((item) => String(item?.path || '').trim()).filter(Boolean)
-      if (roleNames.length !== items.length || paths.length !== items.length) {
-        return new Error('角色默认首页必须完整选择角色和页面')
-      }
-      if (new Set(roleNames).size !== roleNames.length) {
-        return new Error('同一个角色只能配置一个默认首页')
-      }
-      return true
-    },
-    trigger: ['change', 'blur'],
-  },
   login_account_ip_fail_limit: { required: true, type: 'number', min: 1, message: '请输入正确的账号+IP失败阈值', trigger: ['blur', 'change'] },
   login_account_ip_lock_minutes: { required: true, type: 'number', min: 1, message: '请输入正确的账号+IP锁定时长', trigger: ['blur', 'change'] },
   login_ip_fail_limit: { required: true, type: 'number', min: 1, message: '请输入正确的IP失败阈值', trigger: ['blur', 'change'] },
@@ -192,39 +173,7 @@ const rules = {
 
 onMounted(() => {
   loadData()
-  loadRoleOptions()
-  loadMenuOptions()
 })
-
-async function loadRoleOptions() {
-  try {
-    const res = await api.getRoleList({ page: 1, page_size: 9999 })
-    roleOptions.value = (res.data || []).map((item) => ({ label: item.name, value: item.name }))
-  } catch (error) {
-    roleOptions.value = []
-  }
-}
-
-async function loadMenuOptions() {
-  try {
-    const res = await api.getMenus({ page: 1, page_size: 9999 })
-    menuOptions.value = (res.data || [])
-      .flatMap((item) => {
-        const children = Array.isArray(item.children) ? item.children : []
-        if (children.length > 0) {
-          return children
-            .filter((child) => child.component && child.path)
-            .map((child) => ({ label: `${item.name} / ${child.name} (${child.component})`, value: child.path }))
-        }
-        if (item.component && item.path) {
-          return [{ label: `${item.name} (${item.component})`, value: item.path }]
-        }
-        return []
-      })
-  } catch (error) {
-    menuOptions.value = []
-  }
-}
 
 async function loadData() {
   try {
@@ -245,7 +194,6 @@ async function loadData() {
       ticket_description_templates: Array.isArray(res.data?.ticket_description_templates)
         ? res.data.ticket_description_templates
         : form.value.ticket_description_templates,
-      role_home_pages: Array.isArray(res.data?.role_home_pages) ? res.data.role_home_pages : form.value.role_home_pages,
     }
     const publicRes = await api.getPublicConfig()
     appStore.setSiteConfig(publicRes.data || {})
@@ -327,19 +275,6 @@ function removeDescriptionTemplate(index) {
   form.value.ticket_description_templates.splice(index, 1)
 }
 
-function addRoleHomePage() {
-  const usedRoles = new Set((form.value.role_home_pages || []).map((item) => item.role_name).filter(Boolean))
-  const nextRole = roleOptions.value.find((item) => !usedRoles.has(item.value))
-  form.value.role_home_pages.push({ role_name: '', path: '' })
-  if (nextRole) {
-    form.value.role_home_pages[form.value.role_home_pages.length - 1].role_name = nextRole.value
-  }
-}
-
-function removeRoleHomePage(index) {
-  form.value.role_home_pages.splice(index, 1)
-}
-
 function applyPresetHtmlTemplates() {
   form.value.email_verify_subject = presetTemplates.verifySubject
   form.value.email_verify_template = presetTemplates.verifyHtml
@@ -407,24 +342,6 @@ function applyPresetHtmlTemplates() {
                     <NButton quaternary type="error" @click="removeDescriptionTemplate(index)">删除</NButton>
                   </div>
                   <NButton dashed @click="addDescriptionTemplate">新增模板</NButton>
-                </div>
-              </NFormItem>
-              <NFormItem label="角色默认首页">
-                <div class="template-editor">
-                  <div v-for="(item, index) in form.role_home_pages" :key="index" class="home-page-item">
-                    <NSelect
-                      v-model:value="form.role_home_pages[index].role_name"
-                      :options="roleOptions.filter((option) => option.value === item.role_name || !form.role_home_pages.some((entry, entryIndex) => entryIndex !== index && entry.role_name === option.value))"
-                      placeholder="选择角色"
-                    />
-                    <NSelect
-                      v-model:value="form.role_home_pages[index].path"
-                      :options="menuOptions"
-                      placeholder="选择默认页面"
-                    />
-                    <NButton quaternary type="error" @click="removeRoleHomePage(index)">删除</NButton>
-                  </div>
-                  <NButton dashed @click="addRoleHomePage">新增角色首页</NButton>
                 </div>
               </NFormItem>
             </NCard>

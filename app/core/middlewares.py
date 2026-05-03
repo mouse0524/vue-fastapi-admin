@@ -71,7 +71,7 @@ class HttpAuditLogMiddleware(BaseHTTPMiddleware):
             try:
                 body = await request.json()
                 args.update(body)
-            except JSONDecodeError:
+            except (JSONDecodeError, UnicodeDecodeError):
                 try:
                     body = await request.form()
                     # args.update(body)
