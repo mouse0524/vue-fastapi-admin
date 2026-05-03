@@ -25,6 +25,7 @@ class SystemSettingController:
         "mail",
         "mail_template",
         "webdav",
+        "ai_kb",
     }
 
     _DEFAULTS = {
@@ -101,6 +102,15 @@ class SystemSettingController:
             "webdav_signature_ttl": 600,
             "webdav_max_upload_size": 52428800,
             "webdav_signature_secret": None,
+        },
+        "ai_kb": {
+            "ai_kb_enabled": True,
+            "ai_kb_top_k": 5,
+            "ai_kb_chunk_size": 800,
+            "ai_kb_chunk_overlap": 120,
+            "ai_kb_max_upload_size": 20971520,
+            "ai_kb_feedback_window": 20,
+            "ai_kb_auto_reindex_threshold": 5,
         },
     }
 
@@ -301,6 +311,15 @@ class SystemSettingController:
             "webdav_max_upload_size",
             "webdav_signature_secret",
         }
+        ai_kb_keys = {
+            "ai_kb_enabled",
+            "ai_kb_top_k",
+            "ai_kb_chunk_size",
+            "ai_kb_chunk_overlap",
+            "ai_kb_max_upload_size",
+            "ai_kb_feedback_window",
+            "ai_kb_auto_reindex_threshold",
+        }
 
         mapping = {
             "site": site_keys,
@@ -310,6 +329,7 @@ class SystemSettingController:
             "mail": mail_keys,
             "mail_template": mail_template_keys,
             "webdav": webdav_keys,
+            "ai_kb": ai_kb_keys,
         }
 
         for section, keys in mapping.items():

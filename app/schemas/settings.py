@@ -63,6 +63,14 @@ class SystemSettingUpdateIn(BaseModel):
     webdav_max_upload_size: int = 50 * 1024 * 1024
     webdav_signature_secret: str | None = None
 
+    ai_kb_enabled: bool = True
+    ai_kb_top_k: int = 5
+    ai_kb_chunk_size: int = 800
+    ai_kb_chunk_overlap: int = 120
+    ai_kb_max_upload_size: int = 20 * 1024 * 1024
+    ai_kb_feedback_window: int = 20
+    ai_kb_auto_reindex_threshold: int = 5
+
     @field_validator("ticket_attachment_extensions")
     @classmethod
     def validate_attachment_extensions(cls, value: list[str]):
@@ -145,6 +153,20 @@ class SystemSettingUpdateIn(BaseModel):
     @field_validator("webdav_share_default_expire_hours", "webdav_signature_ttl", "webdav_max_upload_size")
     @classmethod
     def validate_positive_webdav_numbers(cls, value: int, info):
+        if value < 1:
+            raise ValueError(f"{info.field_name} 必须大于等于 1")
+        return value
+
+    @field_validator(
+        "ai_kb_top_k",
+        "ai_kb_chunk_size",
+        "ai_kb_chunk_overlap",
+        "ai_kb_max_upload_size",
+        "ai_kb_feedback_window",
+        "ai_kb_auto_reindex_threshold",
+    )
+    @classmethod
+    def validate_positive_ai_kb_numbers(cls, value: int, info):
         if value < 1:
             raise ValueError(f"{info.field_name} 必须大于等于 1")
         return value

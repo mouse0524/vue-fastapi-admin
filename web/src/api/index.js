@@ -118,4 +118,23 @@ export default {
   webdavCreateShare: (data = {}) => request.post('/webdav/share/create', data),
   webdavShareList: (params = {}) => request.get('/webdav/share/list', { params }),
   webdavShareDelete: (data = {}) => request.post('/webdav/share/delete', data),
+  // ai knowledge base
+  aiKbChat: (data = {}) => request.post('/ai-kb/chat', data),
+  aiKbChatStream: (params = {}) => request.get('/ai-kb/chat/stream', { params }),
+  aiKbFeedback: (data = {}) => request.post('/ai-kb/feedback', data),
+  aiKbDocs: (params = {}) => request.get('/ai-kb/docs', { params }),
+  aiKbDeleteDoc: (params = {}) => request.delete('/ai-kb/docs', { params }),
+  aiKbReindex: (params = {}) => request.post('/ai-kb/reindex', null, { params }),
+  aiKbReindexOne: (params = {}) => request.post('/ai-kb/reindex_one', null, { params }),
+  aiKbGetConfig: () => request.get('/ai-kb/config'),
+  aiKbUpdateConfig: (data = {}) => request.post('/ai-kb/config', data),
+  aiKbStatus: () => request.get('/ai-kb/status'),
+  aiKbRebuildHistory: (params = {}) => request.get('/ai-kb/rebuild_history', { params }),
+  aiKbUpload: (file) => {
+    const formData = new FormData()
+    formData.append('file', file)
+    return request.post('/ai-kb/upload', formData, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+    })
+  },
 }
