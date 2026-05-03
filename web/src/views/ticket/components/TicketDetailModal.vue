@@ -176,7 +176,7 @@ function getActionIconClass(action) {
         <strong>{{ ticket.reviewer_name || ticket.reviewer_id || '-' }}</strong>
       </div>
       <div class="detail-card">
-        <span>技术处理人</span>
+        <span>指派技术</span>
         <strong>{{ ticket.tech_name || ticket.tech_id || '-' }}</strong>
       </div>
       <div class="detail-card">

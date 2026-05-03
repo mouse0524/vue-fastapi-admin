@@ -133,8 +133,7 @@ async def list_ticket(
 
     if not user.is_superuser and "管理员" not in role_names and "客服" not in role_names:
         if "技术" in role_names:
-            # 技术账号可查看自己提交/已接手工单，以及待技术处理的公共队列工单
-            q &= Q(tech_id=user.id) | Q(submitter_id=user.id) | Q(status=TicketStatus.TECH_PROCESSING)
+            q &= Q(tech_id=user.id)
         else:
             q &= Q(submitter_id=user.id)
     filter_cost_ms = int((perf_counter() - filter_start_at) * 1000)
@@ -169,7 +168,7 @@ async def get_ticket(ticket_id: int = Query(..., description="工单ID")):
     ticket = await Ticket.get(id=ticket_id)
     if not user.is_superuser and "管理员" not in role_names and "客服" not in role_names:
         if "技术" in role_names:
-            can_view = ticket.submitter_id == user.id or ticket.tech_id == user.id or ticket.status == TicketStatus.TECH_PROCESSING
+            can_view = ticket.tech_id == user.id
             if not can_view:
                 return Fail(code=403, msg="您暂无权限查看该工单")
         elif ticket.submitter_id != user.id:
@@ -207,6 +206,7 @@ async def review_ticket(payload: TicketReviewIn):
         reviewer_id=user.id,
         approved=payload.approved,
         comment=payload.comment,
+        tech_id=payload.tech_id,
     )
     logger.info("[api.ticket.review] success user_id={} ticket_id={} status={}", user.id, ticket.id, ticket.status)
     return Success(msg="审核成功", data=await ticket.to_dict())

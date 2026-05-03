@@ -274,7 +274,7 @@ class TicketController:
         return total, rows
 
     async def set_customer_service_review(
-        self, *, ticket_id: int, reviewer_id: int, approved: bool, comment: str | None
+        self, *, ticket_id: int, reviewer_id: int, approved: bool, comment: str | None, tech_id: int | None
     ) -> Ticket:
         logger.info(
             "[ticket.cs_review] start ticket_id={} reviewer_id={} approved={} comment={}",
@@ -290,8 +290,14 @@ class TicketController:
         old_status = ticket.status
         comment = self._sanitize_rich_html(comment)
         if approved:
+            if not tech_id:
+                raise HTTPException(status_code=400, detail="审核通过时必须指派技术处理人")
+            tech_user = await User.filter(id=tech_id, is_active=True, roles__name="技术").first()
+            if not tech_user:
+                raise HTTPException(status_code=400, detail="请选择有效的技术处理人")
             ticket.status = TicketStatus.TECH_PROCESSING
             ticket.reviewer_id = reviewer_id
+            ticket.tech_id = tech_id
             ticket.reject_reason = None
             action = TicketActionType.CS_APPROVE
         else:

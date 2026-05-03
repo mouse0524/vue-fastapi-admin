@@ -24,9 +24,11 @@ const commentVisible = ref(false)
 const reviewAction = ref(true)
 const pendingReviewRow = ref(null)
 const reviewComment = ref('')
+const selectedTechId = ref(null)
 const rootCauseOptions = ref([])
 const categoryOptions = ref([])
 const projectPhaseOptions = ref([])
+const techOptions = ref([])
 const quickFilters = [
   { label: '待审核', value: 'pending_review' },
   { label: '已驳回', value: 'cs_rejected' },
@@ -44,8 +46,21 @@ const summaryCards = computed(() => {
 onMounted(() => {
   $table.value?.handleSearch()
   loadTicketMetaOptions()
+  loadTechOptions()
   refreshSummaryStats()
 })
+
+async function loadTechOptions() {
+  try {
+    const res = await api.getUserList({ page: 1, page_size: 9999 })
+    const rows = Array.isArray(res?.data) ? res.data : []
+    techOptions.value = rows
+      .filter((item) => Array.isArray(item.roles) && item.roles.some((role) => role?.name === '技术'))
+      .map((item) => ({ label: item.alias || item.username, value: item.id }))
+  } catch (error) {
+    techOptions.value = []
+  }
+}
 
 function handleTableDataChange(rows) {
   tableData.value = Array.isArray(rows) ? rows : []
@@ -83,15 +98,21 @@ async function loadTicketMetaOptions() {
 }
 
 async function review(row, approved) {
+  if (approved && !selectedTechId.value) {
+    $message.warning('审核通过时请先指派技术处理人')
+    return
+  }
   await api.reviewTicket({
     ticket_id: row.id,
     approved,
     comment: reviewComment.value?.trim() || (approved ? '审核通过' : '客服驳回'),
+    tech_id: approved ? selectedTechId.value : null,
   })
   $message.success('审核操作已完成')
   commentVisible.value = false
   pendingReviewRow.value = null
   reviewComment.value = ''
+  selectedTechId.value = null
   $table.value?.handleSearch()
   refreshSummaryStats()
 }
@@ -111,6 +132,7 @@ function openReviewAction(row, approved) {
   pendingReviewRow.value = row
   reviewAction.value = approved
   reviewComment.value = approved ? '审核通过' : '客服驳回'
+  selectedTechId.value = null
   commentVisible.value = true
 }
 
@@ -259,6 +281,14 @@ const columns = [
       <TicketDetailModal v-model:visible="detailVisible" :ticket="currentTicket" />
 
       <NModal v-model:show="commentVisible" preset="card" style="width: 520px" :title="reviewAction ? '审核通过备注' : '驳回备注'">
+        <NSelect
+          v-if="reviewAction"
+          v-model:value="selectedTechId"
+          class="mb-12"
+          :options="techOptions"
+          clearable
+          placeholder="请选择技术处理人（必填）"
+        />
         <NInput
           v-model:value="reviewComment"
           type="textarea"

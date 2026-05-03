@@ -24,6 +24,7 @@ class TicketReviewIn(BaseModel):
     ticket_id: int = Field(..., description="工单ID")
     approved: bool = Field(..., description="是否通过")
     comment: Optional[str] = Field(None, description="审核备注")
+    tech_id: Optional[int] = Field(None, description="指派技术人员ID（审核通过时必填）")
 
 
 class TicketTechActionIn(BaseModel):
