@@ -3,6 +3,7 @@ import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import { NButton, NEmpty, NTag } from 'naive-ui'
 import CrudModal from '@/components/table/CrudModal.vue'
 import api from '@/api'
+import { htmlToPlainText, isImageName, sanitizeHtml } from '@/utils'
 import { mapTicketActionText, ticketStatusTextMap, ticketStatusTypeMap } from './ticket-meta'
 
 defineEmits(['update:visible'])
@@ -21,8 +22,9 @@ const props = defineProps({
 })
 
 const attachments = computed(() => props.ticket?.attachments || [])
-const imageAttachments = computed(() => attachments.value.filter((item) => /\.(png|jpe?g|gif)$/i.test(item.origin_name || item.file_path || '')))
+const imageAttachments = computed(() => attachments.value.filter((item) => isImageName(item.origin_name || item.file_path || '')))
 const imagePreviewMap = ref({})
+const safeDescription = computed(() => sanitizeHtml(props.ticket?.description || '-'))
 
 function revokeImagePreviewUrls() {
   Object.values(imagePreviewMap.value || {}).forEach((url) => {
@@ -98,9 +100,9 @@ function renderActionContent(item) {
   if (!item) return '-'
   if (item.action === 'finish' && props.ticket?.root_cause) {
     const base = item.comment?.trim() || '处理完成'
-    return `${base}（根因：${props.ticket.root_cause}）`
+    return sanitizeHtml(`${base}（根因：${props.ticket.root_cause}）`)
   }
-  return item.comment || '-'
+  return sanitizeHtml(item.comment || '-')
 }
 
 function isRejectAction(action) {
@@ -133,7 +135,7 @@ function getActionIconClass(action) {
         <div class="detail-title">{{ ticket.title }}</div>
         <div class="detail-actions">
           <NButton size="tiny" quaternary type="primary" @click="copyText(ticket.ticket_no, '工单编号已复制')">复制编号</NButton>
-          <NButton size="tiny" quaternary type="primary" @click="copyText((ticket.description || '').replace(/<[^>]+>/g, ' ').replace(/&nbsp;/gi, ' ').replace(/\s+/g, ' ').trim(), '描述文本已复制')">复制文本</NButton>
+          <NButton size="tiny" quaternary type="primary" @click="copyText(htmlToPlainText(ticket.description), '描述文本已复制')">复制文本</NButton>
           <NButton size="tiny" quaternary type="primary" @click="copyText(ticket.description, '描述HTML已复制')">复制HTML</NButton>
         </div>
       </div>
@@ -189,7 +191,7 @@ function getActionIconClass(action) {
 
     <div class="description-card">
       <div class="section-title">问题描述</div>
-      <div class="description-content" v-html="ticket.description || '-'"></div>
+      <div class="description-content" v-html="safeDescription"></div>
     </div>
 
     <div class="attachment-card">
@@ -213,7 +215,7 @@ function getActionIconClass(action) {
             <div class="attachment-meta">{{ item.mime_type || 'application/octet-stream' }} / {{ item.file_size || 0 }} bytes</div>
           </div>
           <div class="attachment-actions">
-            <NButton v-if="/\.(png|jpe?g|gif)$/i.test(item.origin_name || item.file_path || '')" size="small" type="info" quaternary @click="copyImage(item)">复制图片</NButton>
+            <NButton v-if="isImageName(item.origin_name || item.file_path || '')" size="small" type="info" quaternary @click="copyImage(item)">复制图片</NButton>
             <NButton size="small" type="primary" quaternary @click="openAttachment(item)">下载</NButton>
           </div>
         </div>

@@ -3,12 +3,13 @@ import { ref } from 'vue'
 import { NButton, NForm, NFormItem, NInput, NTabPane, NTabs, NImage } from 'naive-ui'
 import { useI18n } from 'vue-i18n'
 import CommonPage from '@/components/page/CommonPage.vue'
-import { useUserStore } from '@/store'
+import { useAppStore, useUserStore } from '@/store'
 import api from '@/api'
 import { is } from '~/src/utils'
 
 const { t } = useI18n()
 const userStore = useUserStore()
+const appStore = useAppStore()
 const isLoading = ref(false)
 
 // 用户信息的表单
@@ -56,6 +57,12 @@ async function updatePassword() {
   isLoading.value = true
   passwordFormRef.value?.validate(async (err) => {
     if (!err) {
+      const message = validatePasswordPolicy(passwordForm.value.new_password)
+      if (message) {
+        $message.warning(message)
+        isLoading.value = false
+        return
+      }
       const data = { ...passwordForm.value, id: userStore.userId }
       await api
         .updatePassword(data)
@@ -73,6 +80,23 @@ async function updatePassword() {
         })
     }
   })
+}
+
+function validatePasswordPolicy(value) {
+  const text = String(value || '')
+  const minLength = appStore.passwordMinLength || 8
+  const minCategories = (appStore.passwordRequiredCategories || []).length || 2
+  if (text.length < minLength) {
+    return `新密码长度至少 ${minLength} 位`
+  }
+  const hasLetter = /[A-Za-z]/.test(text)
+  const hasDigit = /\d/.test(text)
+  const hasSpecial = /[^A-Za-z\d]/.test(text)
+  const categories = [hasLetter, hasDigit, hasSpecial].filter(Boolean).length
+  if (categories < minCategories) {
+    return '新密码必须包含字母、数字、特殊字符中的任意两类'
+  }
+  return ''
 }
 const passwordFormRules = {
   old_password: [

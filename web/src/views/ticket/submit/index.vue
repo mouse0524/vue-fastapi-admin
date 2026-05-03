@@ -2,7 +2,7 @@
 import { computed, onMounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { NButton, NForm, NFormItem, NInput, NSelect, NUpload, NAlert, NSpace, NTag } from 'naive-ui'
-import { getToken, isNullOrWhitespace } from '@/utils'
+import { getToken, isImageName, isNullOrWhitespace } from '@/utils'
 import api from '@/api'
 import RichTextEditor from '@/components/editor/RichTextEditor.vue'
 
@@ -112,7 +112,7 @@ async function fetchPublicConfig() {
       attachmentAccept.value = attachmentExtensions.map((item) => `.${String(item).replace(/^\./, '')}`).join(',')
     }
   } catch (error) {
-    console.error('fetchPublicConfig error', error)
+    // ignore config fetch errors
   }
 }
 
@@ -130,7 +130,7 @@ async function fetchPrefill() {
     form.value.email = res.data?.email || form.value.email
     form.value.phone = res.data?.phone || form.value.phone
   } catch (error) {
-    console.error('fetchPrefill error', error)
+    // ignore prefill errors
   }
 }
 
@@ -141,10 +141,6 @@ function quickFill() {
 function applyDescriptionTemplate(value) {
   if (!value) return
   form.value.description = value
-}
-
-function isImageName(name) {
-  return /\.(png|jpe?g|gif)$/i.test(String(name || ''))
 }
 
 function buildObjectUrl(rawFile) {
@@ -173,15 +169,8 @@ async function customUpload({ file, onFinish, onError }) {
   try {
     uploadLoading.value = true
     await uploadSingleFile(file.file, file)
-    console.log('[ticket.submit] upload success', {
-      isAuthed: isAuthed.value,
-      fileName: file?.name,
-      fileId: file?.id,
-      uploadedAttachmentIds: uploadedAttachmentIds.value,
-    })
     onFinish()
   } catch (error) {
-    console.error('[ticket.submit] upload failed', error)
     onError()
   } finally {
     uploadLoading.value = false
@@ -221,12 +210,6 @@ function handleRemove({ file }) {
   if (attachmentId > 0) {
     uploadedAttachmentIds.value = uploadedAttachmentIds.value.filter((id) => id !== attachmentId)
   }
-  console.log('[ticket.submit] remove file', {
-    fileName: file?.name,
-    fileId: file?.id,
-    attachmentId,
-    uploadedAttachmentIds: uploadedAttachmentIds.value,
-  })
 }
 
 function resetForm() {
@@ -256,11 +239,6 @@ function submit() {
         ...form.value,
         attachment_ids: [...uploadedAttachmentIds.value],
       }
-      console.log('[ticket.submit] submit payload', {
-        isAuthed: isAuthed.value,
-        attachment_ids: payload.attachment_ids,
-        title: payload.title,
-      })
       if (isAuthed.value) {
         await api.createTicket(payload)
       } else {

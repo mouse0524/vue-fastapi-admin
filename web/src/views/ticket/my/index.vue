@@ -8,6 +8,7 @@ import QueryBarItem from '@/components/query-bar/QueryBarItem.vue'
 import RichTextEditor from '@/components/editor/RichTextEditor.vue'
 import TicketDetailModal from '@/views/ticket/components/TicketDetailModal.vue'
 import api from '@/api'
+import { isImageName } from '@/utils'
 import { useUserStore } from '@/store'
 import { ticketStatusOptions, ticketStatusTextMap, ticketStatusTypeMap } from '@/views/ticket/components/ticket-meta'
 
@@ -78,10 +79,6 @@ onMounted(() => {
   $table.value?.handleSearch()
   loadTicketMetaOptions()
 })
-
-function isImageName(name) {
-  return /\.(png|jpe?g|gif)$/i.test(String(name || ''))
-}
 
 function buildObjectUrl(rawFile) {
   if (!rawFile) return ''

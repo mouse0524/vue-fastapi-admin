@@ -1,5 +1,7 @@
 from pydantic import BaseModel, Field, field_validator
 
+from app.models.enums import TicketStatus
+
 
 class SystemSettingUpdateIn(BaseModel):
     site_title: str = Field(..., description="网站标题")
@@ -17,6 +19,10 @@ class SystemSettingUpdateIn(BaseModel):
     login_ip_lock_minutes: int = Field(default=60, description="IP锁定时长(分钟)")
     login_fail_window_minutes: int = Field(default=60, description="登录失败统计窗口(分钟)")
     login_generic_error_enabled: bool = Field(default=True, description="是否启用统一登录错误提示")
+    password_min_length: int = Field(default=8, description="密码最小长度")
+    password_required_categories: list[str] = Field(default_factory=lambda: ["letter", "digit"], description="密码必选类别")
+
+    ticket_notify_by_role: dict[str, list[str]] = Field(default_factory=dict, description="按角色配置工单提醒节点")
 
     smtp_host: str | None = None
     smtp_port: int = 465
@@ -38,6 +44,15 @@ class SystemSettingUpdateIn(BaseModel):
     register_review_reject_subject: str = "注册审核结果通知"
     register_review_reject_is_html: bool = True
     register_review_reject_template: str = "您好，{contact_name}，您的{register_type}注册申请已驳回。驳回理由：{reason}"
+    reset_password_subject: str = "密码重置验证码"
+    reset_password_is_html: bool = False
+    reset_password_template: str = "<div style=\"font-family:Arial,'PingFang SC','Microsoft YaHei',sans-serif;color:#1f2937;line-height:1.7;\"><h2 style=\"margin:0 0 12px;font-size:18px;color:#0f4c81;\">找回密码验证码</h2><p style=\"margin:0 0 10px;\">您好，您正在进行密码重置操作，请使用以下验证码：</p><div style=\"display:inline-block;padding:10px 18px;border-radius:8px;background:#eff6ff;border:1px solid #bfdbfe;font-size:24px;font-weight:700;letter-spacing:4px;color:#1d4ed8;\">{code}</div><p style=\"margin:12px 0 0;color:#6b7280;\">验证码 {minutes} 分钟内有效，请勿泄露给他人。</p></div>"
+    admin_reset_password_subject: str = "账号密码已重置"
+    admin_reset_password_is_html: bool = True
+    admin_reset_password_template: str = "<div style=\"font-family:Arial,'PingFang SC','Microsoft YaHei',sans-serif;color:#1f2937;line-height:1.7;\"><h2 style=\"margin:0 0 12px;font-size:18px;color:#b45309;\">账号密码已重置</h2><p style=\"margin:0 0 8px;\">您好，<b>{username}</b>：</p><p style=\"margin:0 0 8px;\">管理员已重置您的账号密码，请使用以下临时密码登录：</p><div style=\"display:inline-block;padding:10px 14px;border-radius:8px;background:#fff7ed;border:1px solid #fed7aa;font-size:20px;font-weight:700;color:#c2410c;\">{password}</div><p style=\"margin:12px 0 0;color:#6b7280;\">登录后请尽快在个人中心修改密码。</p></div>"
+    ticket_notify_subject: str = "工单状态提醒：{ticket_no}"
+    ticket_notify_is_html: bool = True
+    ticket_notify_template: str = "<div style=\"font-family:Arial,'PingFang SC','Microsoft YaHei',sans-serif;color:#1f2937;line-height:1.7;\"><h2 style=\"margin:0 0 12px;font-size:18px;color:#1d4ed8;\">工单状态提醒</h2><p style=\"margin:0 0 8px;\">您好，<b>{name}</b>：</p><p style=\"margin:0 0 6px;\">工单编号：<b>{ticket_no}</b></p><p style=\"margin:0 0 6px;\">工单标题：{title}</p><p style=\"margin:0 0 6px;\">当前状态：<b style=\"color:#1d4ed8;\">{status}</b></p><p style=\"margin:0 0 6px;\">操作人：{operator}</p><p style=\"margin:8px 0 0;color:#6b7280;\">请及时登录系统处理。</p></div>"
 
     webdav_enabled: bool = False
     webdav_base_url: str | None = None
@@ -80,6 +95,51 @@ class SystemSettingUpdateIn(BaseModel):
             raise ValueError(f"{info.field_name} 必须大于等于 1")
         return value
 
+    @field_validator("password_min_length")
+    @classmethod
+    def validate_password_min_length(cls, value: int):
+        if value < 8:
+            raise ValueError("密码最小长度必须大于等于8")
+        return value
+
+    @field_validator("password_required_categories")
+    @classmethod
+    def validate_password_required_categories(cls, value: list[str]):
+        valid = {"letter", "digit", "special"}
+        normalized = []
+        for item in value or []:
+            k = str(item or "").strip().lower()
+            if not k:
+                continue
+            if k not in valid:
+                raise ValueError("密码类别仅支持 letter/digit/special")
+            if k not in normalized:
+                normalized.append(k)
+        if not normalized:
+            raise ValueError("密码类别至少选择一项")
+        return normalized
+
+    @field_validator("ticket_notify_by_role")
+    @classmethod
+    def validate_ticket_notify_by_role(cls, value: dict[str, list[str]]):
+        valid_statuses = {item.value for item in TicketStatus}
+        normalized: dict[str, list[str]] = {}
+        for role_name, statuses in (value or {}).items():
+            role = str(role_name or "").strip()
+            if not role:
+                continue
+            role_statuses: list[str] = []
+            for item in statuses or []:
+                status = str(item or "").strip()
+                if not status:
+                    continue
+                if status not in valid_statuses:
+                    raise ValueError("工单邮件通知节点包含非法状态")
+                if status not in role_statuses:
+                    role_statuses.append(status)
+            normalized[role] = role_statuses
+        return normalized
+
 
 class PublicSiteConfigOut(BaseModel):
     site_title: str
@@ -96,6 +156,9 @@ class PublicSiteConfigOut(BaseModel):
     login_ip_lock_minutes: int
     login_fail_window_minutes: int
     login_generic_error_enabled: bool
+    password_min_length: int
+    password_required_categories: list[str]
+    ticket_notify_by_role: dict[str, list[str]]
 
 
 class WebDavTestIn(BaseModel):

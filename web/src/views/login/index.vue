@@ -73,6 +73,10 @@
           {{ $t('views.login.text_login') }}
         </n-button>
 
+        <div class="register-action" style="margin-top: 6px">
+          <n-button text type="primary" @click="openForgotPasswordModal">忘记密码</n-button>
+        </div>
+
         <div class="agreement-row mt-10">
           <n-checkbox v-model:checked="loginAgree">
             <span>我已阅读并同意</span>
@@ -196,6 +200,37 @@
       </template>
     </n-modal>
 
+    <n-modal v-model:show="showForgotPasswordModal" preset="card" title="找回密码" style="width: 520px">
+      <n-form ref="forgotFormRef" :model="forgotForm" :rules="forgotRules" label-width="90" label-placement="left">
+        <n-form-item label="邮箱" path="email">
+          <n-input v-model:value="forgotForm.email" placeholder="请输入注册邮箱" />
+        </n-form-item>
+        <n-form-item label="图形验证码" path="captcha_code">
+          <div class="captcha-modal-row">
+            <n-input v-model:value="forgotForm.captcha_code" placeholder="请输入图形验证码" />
+            <img :src="forgotCaptchaImage" class="captcha-modal-img" @click="fetchForgotCaptcha" />
+          </div>
+        </n-form-item>
+        <n-form-item label="邮箱验证码" path="email_code">
+          <div class="email-code-row">
+            <n-input v-model:value="forgotForm.email_code" placeholder="请输入邮箱验证码" />
+            <n-button :loading="forgotCodeSending" :disabled="forgotCodeCooldown > 0" @click="sendForgotCode">
+              {{ forgotCodeCooldown > 0 ? `${forgotCodeCooldown}s后重试` : '发送验证码' }}
+            </n-button>
+          </div>
+        </n-form-item>
+        <n-form-item label="新密码" path="new_password">
+          <n-input v-model:value="forgotForm.new_password" type="password" show-password-on="mousedown" placeholder="请输入新密码" />
+        </n-form-item>
+      </n-form>
+      <template #footer>
+        <div flex justify-end>
+          <n-button @click="showForgotPasswordModal = false">取消</n-button>
+          <n-button ml-12 type="primary" :loading="forgotSubmitting" @click="submitForgotPassword">重置密码</n-button>
+        </div>
+      </template>
+    </n-modal>
+
     <n-modal v-model:show="showUserAgreementModal" preset="card" title="用户服务协议" style="width: 760px">
       <div class="protocol-body">
         <h4>一、协议说明</h4>
@@ -270,12 +305,26 @@ const showPartnerModal = ref(false)
 const showCaptchaModal = ref(false)
 const showUserAgreementModal = ref(false)
 const showPrivacyPolicyModal = ref(false)
+const showForgotPasswordModal = ref(false)
 const partnerSubmitting = ref(false)
 const emailCodeSending = ref(false)
 const emailCodeCooldown = ref(0)
 let emailCodeTimer = null
 const partnerFormRef = ref(null)
 const partnerCaptchaImage = ref('')
+const forgotCaptchaImage = ref('')
+const forgotFormRef = ref(null)
+const forgotCodeSending = ref(false)
+const forgotSubmitting = ref(false)
+const forgotCodeCooldown = ref(0)
+let forgotCodeTimer = null
+const forgotForm = ref({
+  email: '',
+  captcha_id: '',
+  captcha_code: '',
+  email_code: '',
+  new_password: '',
+})
 const partnerForm = ref({
   register_type: 'channel',
   company_name: '',
@@ -305,7 +354,10 @@ const partnerRules = {
     },
     trigger: ['blur', 'input', 'change'],
   },
-  password: { required: true, message: '请输入密码', trigger: ['blur', 'input'] },
+  password: {
+    validator: (_, value) => validatePasswordPolicy(value),
+    trigger: ['blur', 'input'],
+  },
   captcha_code: { required: true, message: '请输入验证码', trigger: ['blur', 'input'] },
   agree_protocol: {
     validator: () => {
@@ -366,6 +418,16 @@ function getDefaultLoginPath() {
   return '/ticket/my'
 }
 
+const forgotRules = {
+  email: { required: true, message: '请输入邮箱', trigger: ['blur', 'input'] },
+  captcha_code: { required: true, message: '请输入图形验证码', trigger: ['blur', 'input'] },
+  email_code: { required: true, message: '请输入邮箱验证码', trigger: ['blur', 'input'] },
+  new_password: {
+    validator: (_, value) => validatePasswordPolicy(value),
+    trigger: ['blur', 'input'],
+  },
+}
+
 function resolveRoleTargetPath(redirectPath) {
   const roleDefaultPath = getDefaultLoginPath()
   if (!isUsableRoute(redirectPath)) return roleDefaultPath
@@ -412,7 +474,7 @@ async function handleLogin() {
       router.push(targetPath)
     }
   } catch (e) {
-    console.error('login error', e.error)
+    // ignore login error detail in production logs
     await fetchLoginCaptcha()
     loginInfo.value.captcha_code = ''
   }
@@ -436,7 +498,7 @@ async function fetchPublicConfig() {
     const res = await api.getPublicConfig()
     appStore.setSiteConfig(res.data || {})
   } catch (error) {
-    console.error('fetchPublicConfig error', error)
+    // ignore public config fetch errors
   }
 }
 
@@ -562,6 +624,110 @@ function resetPartnerRegisterState() {
   }
   resetEmailCooldown()
 }
+
+function validatePasswordPolicy(value) {
+  const text = String(value || '')
+  if (!text) return new Error('请输入密码')
+  const minLength = appStore.passwordMinLength || 8
+  const minCategories = (appStore.passwordRequiredCategories || []).length || 2
+  if (text.length < minLength) {
+    return new Error(`密码长度至少 ${minLength} 位`)
+  }
+  const hasLetter = /[A-Za-z]/.test(text)
+  const hasDigit = /\d/.test(text)
+  const hasSpecial = /[^A-Za-z\d]/.test(text)
+  const categories = [hasLetter, hasDigit, hasSpecial].filter(Boolean).length
+  if (categories < minCategories) {
+    return new Error('密码必须包含字母、数字、特殊字符中的任意两类')
+  }
+  return true
+}
+
+async function fetchForgotCaptcha() {
+  const res = await api.getCaptcha()
+  forgotForm.value.captcha_id = res.data.captcha_id
+  forgotCaptchaImage.value = `data:image/png;base64,${res.data.image_base64}`
+}
+
+async function openForgotPasswordModal() {
+  showForgotPasswordModal.value = true
+  forgotForm.value.captcha_code = ''
+  await fetchForgotCaptcha()
+}
+
+async function sendForgotCode() {
+  if (!forgotForm.value.email?.trim()) {
+    $message.warning('请先填写邮箱')
+    return
+  }
+  if (!forgotForm.value.captcha_id || !forgotForm.value.captcha_code?.trim()) {
+    $message.warning('请先填写图形验证码')
+    return
+  }
+  try {
+    forgotCodeSending.value = true
+    await api.sendResetPasswordCode({
+      email: forgotForm.value.email.trim(),
+      captcha_id: forgotForm.value.captcha_id,
+      captcha_code: forgotForm.value.captcha_code.trim(),
+    })
+    $message.success('验证码已发送，请查收邮箱')
+    startForgotCodeCooldown()
+    await fetchForgotCaptcha()
+  } finally {
+    forgotCodeSending.value = false
+  }
+}
+
+function startForgotCodeCooldown(seconds = 60) {
+  forgotCodeCooldown.value = seconds
+  if (forgotCodeTimer) clearInterval(forgotCodeTimer)
+  forgotCodeTimer = setInterval(() => {
+    if (forgotCodeCooldown.value <= 1) {
+      forgotCodeCooldown.value = 0
+      clearInterval(forgotCodeTimer)
+      forgotCodeTimer = null
+      return
+    }
+    forgotCodeCooldown.value -= 1
+  }, 1000)
+}
+
+async function submitForgotPassword() {
+  forgotFormRef.value?.validate(async (err) => {
+    if (err) return
+    try {
+      forgotSubmitting.value = true
+      await api.resetPasswordByEmail({
+        email: forgotForm.value.email.trim(),
+        email_code: forgotForm.value.email_code.trim(),
+        new_password: forgotForm.value.new_password,
+      })
+      $message.success('密码重置成功，请使用新密码登录')
+      showForgotPasswordModal.value = false
+    } finally {
+      forgotSubmitting.value = false
+    }
+  })
+}
+
+watch(showForgotPasswordModal, (v) => {
+  if (!v) {
+    forgotForm.value = {
+      email: '',
+      captcha_id: '',
+      captcha_code: '',
+      email_code: '',
+      new_password: '',
+    }
+    forgotCaptchaImage.value = ''
+    if (forgotCodeTimer) {
+      clearInterval(forgotCodeTimer)
+      forgotCodeTimer = null
+    }
+    forgotCodeCooldown.value = 0
+  }
+})
 
 </script>
 

@@ -45,14 +45,7 @@ async def upload_ticket_attachment(file: UploadFile = File(...)):
 @router.post("/create", summary="提交工单", dependencies=[DependAuth])
 async def create_ticket(payload: TicketCreate):
     user = await _get_current_user()
-    logger.info(
-        "[api.ticket.create] request user_id={} title={} project_phase={} category={} attachment_ids={}",
-        user.id,
-        payload.title,
-        payload.project_phase,
-        payload.category,
-        payload.attachment_ids,
-    )
+    logger.info("[api.ticket.create] request user_id={}", user.id)
     role_names = await _get_user_role_names(user)
     if not user.is_superuser and not any(role in role_names for role in ["用户", "渠道商", "代理商", "技术", "管理员"]):
         return Fail(code=403, msg="您当前账号暂无提交工单权限，请联系管理员")
@@ -81,7 +74,7 @@ async def create_ticket(payload: TicketCreate):
 
     body = payload.model_dump(exclude={"captcha_id", "captcha_code"})
     ticket = await ticket_controller.create_ticket(submitter_id=user.id, payload=body)
-    logger.info("[api.ticket.create] success user_id={} ticket_id={} attachment_ids={}", user.id, ticket.id, payload.attachment_ids)
+    logger.info("[api.ticket.create] success user_id={} ticket_id={}", user.id, ticket.id)
     return Success(msg="提交成功", data=await ticket.to_dict())
 
 
@@ -284,14 +277,6 @@ async def resubmit_ticket(payload: TicketResubmitIn):
 async def update_ticket(payload: TicketUpdateIn):
     user = await _get_current_user()
     logger.info(
-        "[api.ticket.update] payload user_id={} ticket_id={} captcha_id={} has_captcha_code={} attachment_ids={}",
-        user.id,
-        payload.ticket_id,
-        payload.captcha_id,
-        bool((payload.captcha_code or "").strip()),
-        payload.attachment_ids,
-    )
-    logger.info(
         "[api.ticket.update] request user_id={} ticket_id={}",
         user.id,
         payload.ticket_id,
@@ -311,13 +296,6 @@ async def update_ticket(payload: TicketUpdateIn):
         return Fail(code=400, msg="问题分类已更新，请刷新页面后重新选择")
 
     body = payload.model_dump(exclude={"ticket_id", "attachment_ids", "captcha_id", "captcha_code"})
-    logger.info(
-        "[api.ticket.update] sanitized body user_id={} ticket_id={} body_keys={} body_status={}",
-        user.id,
-        payload.ticket_id,
-        list(body.keys()),
-        body.get("status"),
-    )
     ticket = await ticket_controller.update_ticket(
         ticket_id=payload.ticket_id,
         submitter_id=user.id,

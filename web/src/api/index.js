@@ -6,6 +6,8 @@ export default {
   getPublicConfig: () => request.get('/base/public_config', { noNeedToken: true }),
   getWorkbenchStats: () => request.get('/base/workbench_stats'),
   sendEmailCode: (data = {}) => request.post('/base/send_email_code', data, { noNeedToken: true }),
+  sendResetPasswordCode: (data = {}) => request.post('/base/send_reset_password_code', data, { noNeedToken: true }),
+  resetPasswordByEmail: (data = {}) => request.post('/base/reset_password_by_email', data, { noNeedToken: true }),
   getUserInfo: () => request.get('/base/userinfo'),
   getUserMenu: () => request.get('/base/usermenu'),
   getUserApi: () => request.get('/base/userapi'),

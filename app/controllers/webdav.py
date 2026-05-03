@@ -106,8 +106,7 @@ class WebDavController:
 
     @staticmethod
     async def _get_config() -> dict:
-        setting = await system_setting_controller.get_or_create()
-        data = await setting.to_dict()
+        data = await system_setting_controller.get_full_dict()
         if not data.get("webdav_enabled"):
             raise HTTPException(status_code=400, detail="WebDAV未启用，请先在系统设置中启用")
         if not data.get("webdav_base_url"):

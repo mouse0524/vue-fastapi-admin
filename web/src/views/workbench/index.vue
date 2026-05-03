@@ -84,7 +84,7 @@ async function loadStats() {
     const res = await api.getWorkbenchStats()
     stats.value = { ...stats.value, ...(res.data || {}) }
   } catch (error) {
-    console.error('loadStats error', error)
+    // ignore stats load errors
   } finally {
     statsLoading.value = false
   }

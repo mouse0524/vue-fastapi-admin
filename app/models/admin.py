@@ -155,74 +155,12 @@ class PartnerRegistration(BaseModel, TimestampMixin):
         table = "partner_registration"
 
 
-class SystemSetting(BaseModel, TimestampMixin):
-    site_title = fields.CharField(max_length=120, default="Vue FastAPI Admin", description="网站标题")
-    site_logo = fields.CharField(max_length=500, null=True, description="网站Logo")
-    allow_partner_register = fields.BooleanField(default=True, description="是否开放代理商注册")
-    ticket_attachment_extensions = fields.JSONField(default=["zip", "rar", "png", "jpg", "gif"], description="工单附件允许上传类型")
-    ticket_project_phases = fields.JSONField(default=["售前", "实施", "售后"], description="工单项目阶段")
-    ticket_categories = fields.JSONField(default=["登录问题", "权限问题", "系统异常", "其他"], description="工单分类")
-    ticket_root_causes = fields.JSONField(default=["代码缺陷", "配置错误", "环境异常", "数据问题", "操作不当", "第三方依赖"], description="工单问题根因")
-    ticket_description_templates = fields.JSONField(
-        default=[
-            "问题现象：\n复现步骤：\n期望结果：\n实际结果：\n影响范围：",
-            "发生时间：\n操作账号：\n所属模块：\n错误提示：\n已尝试方案：",
-        ],
-        description="工单问题描述模板",
-    )
-    login_security_enabled = fields.BooleanField(default=True, description="是否启用登录安全策略")
-    login_account_ip_fail_limit = fields.IntField(default=5, description="账号+IP失败锁定阈值")
-    login_account_ip_lock_minutes = fields.IntField(default=60, description="账号+IP锁定时长(分钟)")
-    login_ip_fail_limit = fields.IntField(default=20, description="IP失败锁定阈值")
-    login_ip_lock_minutes = fields.IntField(default=60, description="IP锁定时长(分钟)")
-    login_fail_window_minutes = fields.IntField(default=60, description="登录失败统计窗口(分钟)")
-    login_generic_error_enabled = fields.BooleanField(default=True, description="是否启用统一登录错误提示")
-
-    smtp_host = fields.CharField(max_length=120, null=True, description="SMTP主机")
-    smtp_port = fields.IntField(default=465, description="SMTP端口")
-    smtp_username = fields.CharField(max_length=120, null=True, description="SMTP用户名")
-    smtp_password = fields.CharField(max_length=200, null=True, description="SMTP密码")
-    smtp_sender = fields.CharField(max_length=120, null=True, description="发件邮箱")
-    smtp_sender_name = fields.CharField(max_length=120, default="系统通知", description="发件人名称")
-    smtp_use_tls = fields.BooleanField(default=False, description="是否使用TLS")
-    smtp_use_ssl = fields.BooleanField(default=True, description="是否使用SSL")
-
-    email_verify_subject = fields.CharField(max_length=200, default="代理商注册验证码", description="验证邮件主题")
-    email_verify_is_html = fields.BooleanField(default=True, description="验证码邮件是否HTML")
-    email_verify_template = fields.TextField(
-        default="您好，您的验证码是：{code}，{minutes}分钟内有效。",
-        description="验证邮件模板",
-    )
-    register_review_approve_subject = fields.CharField(
-        max_length=200,
-        default="注册审核结果通知",
-        description="注册审核通过邮件主题",
-    )
-    register_review_approve_is_html = fields.BooleanField(default=True, description="注册审核通过模板是否HTML")
-    register_review_approve_template = fields.TextField(
-        default="您好，{contact_name}，您的{register_type}注册申请已审核通过，现可使用邮箱登录系统。",
-        description="注册审核通过邮件模板",
-    )
-    register_review_reject_subject = fields.CharField(
-        max_length=200,
-        default="注册审核结果通知",
-        description="注册审核驳回邮件主题",
-    )
-    register_review_reject_is_html = fields.BooleanField(default=True, description="注册审核驳回模板是否HTML")
-    register_review_reject_template = fields.TextField(
-        default="您好，{contact_name}，您的{register_type}注册申请已驳回。驳回理由：{reason}",
-        description="注册审核驳回邮件模板",
-    )
-
-    webdav_enabled = fields.BooleanField(default=False, description="是否启用WebDAV", index=True)
-    webdav_base_url = fields.CharField(max_length=500, null=True, description="WebDAV基础地址")
-    webdav_username = fields.CharField(max_length=120, null=True, description="WebDAV用户名")
-    webdav_password = fields.CharField(max_length=255, null=True, description="WebDAV密码")
-    webdav_share_default_expire_hours = fields.IntField(default=168, description="WebDAV默认分享有效时长(小时)")
-    webdav_signature_secret = fields.CharField(max_length=255, null=True, description="WebDAV签名密钥")
+class SystemSettingItem(BaseModel, TimestampMixin):
+    section = fields.CharField(max_length=50, unique=True, description="配置分组", index=True)
+    data = fields.JSONField(default=dict, description="分组配置JSON")
 
     class Meta:
-        table = "system_setting"
+        table = "system_setting_item"
 
 
 class WebDavShareLink(BaseModel, TimestampMixin):

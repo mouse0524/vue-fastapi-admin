@@ -209,8 +209,7 @@ const columns = [
                   active.value = true
                   role_id.value = row.id
                 } catch (error) {
-                  // 错误处理
-                  console.error('Error loading data:', error)
+                  // ignore detail logs
                 }
               },
             },

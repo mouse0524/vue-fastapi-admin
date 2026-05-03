@@ -7,62 +7,176 @@ import httpx
 from fastapi import HTTPException, UploadFile
 
 from app.log import logger
-from app.models.admin import SystemSetting
+from app.models.admin import SystemSettingItem
 from app.settings import settings
 from app.utils.file_signature import detect_file_type, normalize_ext
 
 
 class SystemSettingController:
+    _SECTIONS = {
+        "site",
+        "ticket",
+        "login_security",
+        "ticket_notify",
+        "mail",
+        "mail_template",
+        "webdav",
+    }
+
+    _DEFAULTS = {
+        "site": {
+            "site_title": "Vue FastAPI Admin",
+            "site_logo": None,
+            "allow_partner_register": True,
+        },
+        "ticket": {
+            "ticket_attachment_extensions": ["zip", "rar", "png", "jpg", "gif"],
+            "ticket_project_phases": ["售前", "实施", "售后"],
+            "ticket_categories": ["登录问题", "权限问题", "系统异常", "其他"],
+            "ticket_root_causes": ["代码缺陷", "配置错误", "环境异常", "数据问题", "操作不当", "第三方依赖"],
+            "ticket_description_templates": [
+                "问题现象：\n复现步骤：\n期望结果：\n实际结果：\n影响范围：",
+                "发生时间：\n操作账号：\n所属模块：\n错误提示：\n已尝试方案：",
+            ],
+        },
+        "login_security": {
+            "login_security_enabled": True,
+            "login_account_ip_fail_limit": 5,
+            "login_account_ip_lock_minutes": 60,
+            "login_ip_fail_limit": 20,
+            "login_ip_lock_minutes": 60,
+            "login_fail_window_minutes": 60,
+            "login_generic_error_enabled": True,
+            "password_min_length": 8,
+            "password_required_categories": ["letter", "digit"],
+        },
+        "ticket_notify": {
+            "ticket_notify_by_role": {
+                "用户": ["cs_rejected", "tech_rejected", "done"],
+                "代理商": ["cs_rejected", "tech_rejected", "done"],
+                "客服": ["pending_review"],
+                "技术": ["tech_processing"],
+            }
+        },
+        "mail": {
+            "smtp_host": None,
+            "smtp_port": 465,
+            "smtp_username": None,
+            "smtp_password": None,
+            "smtp_sender": None,
+            "smtp_sender_name": "系统通知",
+            "smtp_use_tls": False,
+            "smtp_use_ssl": True,
+        },
+        "mail_template": {
+            "email_verify_subject": "代理商注册验证码",
+            "email_verify_is_html": True,
+            "email_verify_template": "您好，您的验证码是：{code}，{minutes}分钟内有效。",
+            "register_review_approve_subject": "注册审核结果通知",
+            "register_review_approve_is_html": True,
+            "register_review_approve_template": "您好，{contact_name}，您的{register_type}注册申请已审核通过，现可使用邮箱登录系统。",
+            "register_review_reject_subject": "注册审核结果通知",
+            "register_review_reject_is_html": True,
+            "register_review_reject_template": "您好，{contact_name}，您的{register_type}注册申请已驳回。驳回理由：{reason}",
+            "reset_password_subject": "密码重置验证码",
+            "reset_password_is_html": True,
+            "reset_password_template": "<div style=\"font-family:Arial,'PingFang SC','Microsoft YaHei',sans-serif;color:#1f2937;line-height:1.7;background:#f8fbff;border:1px solid #dbeafe;border-radius:12px;padding:16px 18px;\"><h2 style=\"margin:0 0 12px;font-size:18px;color:#1d4ed8;\">找回密码验证码</h2><p style=\"margin:0 0 10px;\">您好，您正在进行密码重置操作，请使用以下验证码：</p><div style=\"display:inline-block;padding:10px 18px;border-radius:8px;background:#eff6ff;border:1px solid #bfdbfe;font-size:24px;font-weight:700;letter-spacing:4px;color:#1d4ed8;\">{code}</div><p style=\"margin:12px 0 0;color:#6b7280;\">验证码 {minutes} 分钟内有效，请勿泄露给他人。</p></div>",
+            "admin_reset_password_subject": "账号密码已重置",
+            "admin_reset_password_is_html": True,
+            "admin_reset_password_template": "<div style=\"font-family:Arial,'PingFang SC','Microsoft YaHei',sans-serif;color:#1f2937;line-height:1.7;background:#fffaf0;border:1px solid #fde68a;border-radius:12px;padding:16px 18px;\"><h2 style=\"margin:0 0 12px;font-size:18px;color:#b45309;\">账号密码已重置</h2><p style=\"margin:0 0 8px;\">您好，<b>{username}</b>：</p><p style=\"margin:0 0 8px;\">管理员已重置您的账号密码，请使用以下临时密码登录：</p><div style=\"display:inline-block;padding:10px 14px;border-radius:8px;background:#fff7ed;border:1px solid #fed7aa;font-size:20px;font-weight:700;color:#c2410c;\">{password}</div><p style=\"margin:12px 0 0;color:#6b7280;\">登录后请尽快在个人中心修改密码。</p></div>",
+            "ticket_notify_subject": "工单状态提醒：{ticket_no}",
+            "ticket_notify_is_html": True,
+            "ticket_notify_template": "<div style=\"font-family:Arial,'PingFang SC','Microsoft YaHei',sans-serif;color:#1f2937;line-height:1.7;background:#f8fbff;border:1px solid #dbeafe;border-radius:12px;padding:16px 18px;\"><h2 style=\"margin:0 0 12px;font-size:18px;color:#1d4ed8;\">工单状态提醒</h2><p style=\"margin:0 0 8px;\">您好，<b>{name}</b>：</p><p style=\"margin:0 0 6px;\">工单编号：<b>{ticket_no}</b></p><p style=\"margin:0 0 6px;\">工单标题：{title}</p><p style=\"margin:0 0 6px;\">当前状态：<b style=\"color:#1d4ed8;\">{status}</b></p><p style=\"margin:0 0 6px;\">操作人：{operator}</p><p style=\"margin:8px 0 0;color:#6b7280;\">请及时登录系统处理。</p></div>",
+        },
+        "webdav": {
+            "webdav_enabled": False,
+            "webdav_base_url": None,
+            "webdav_username": None,
+            "webdav_password": None,
+            "webdav_share_default_expire_hours": 168,
+            "webdav_signature_secret": None,
+        },
+    }
+
     @staticmethod
     def _mask_secret(value: str | None) -> str:
         if not value:
             return ""
         return "******"
 
+    async def _get_or_create_section(self, section: str) -> SystemSettingItem:
+        if section not in self._SECTIONS:
+            raise HTTPException(status_code=400, detail="未知的配置分组")
+        item = await SystemSettingItem.filter(section=section).first()
+        if item:
+            return item
+        item = await SystemSettingItem.create(section=section, data=self._DEFAULTS[section])
+        logger.info("[settings] create section={}", section)
+        return item
+
+    async def _ensure_all_sections(self) -> dict[str, dict]:
+        merged: dict[str, dict] = {}
+        for section in self._SECTIONS:
+            item = await self._get_or_create_section(section)
+            data = dict(self._DEFAULTS[section])
+            data.update(item.data or {})
+            merged[section] = data
+        return merged
+
     async def get_safe_dict(self) -> dict:
-        setting = await self.get_or_create()
-        data = await setting.to_dict()
+        sections = await self._ensure_all_sections()
+        data = {}
+        for section_data in sections.values():
+            data.update(section_data)
         data["smtp_password"] = self._mask_secret(data.get("smtp_password"))
         data["webdav_password"] = self._mask_secret(data.get("webdav_password"))
         return data
 
-    async def get_or_create(self) -> SystemSetting:
-        setting = await SystemSetting.first()
-        if not setting:
-            setting = await SystemSetting.create()
-            logger.info("[settings] create default setting_id={}", setting.id)
-        return setting
-
     async def get_public_config(self) -> dict:
-        setting = await self.get_or_create()
-        data = await setting.to_dict(exclude_fields=["smtp_password"])
-        logo_url = "/api/v1/base/site_logo" if data.get("site_logo") else ""
+        sections = await self._ensure_all_sections()
+        site = sections["site"]
+        ticket = sections["ticket"]
+        login_security = sections["login_security"]
+        logo_url = "/api/v1/base/site_logo" if site.get("site_logo") else ""
+        required_categories = login_security.get("password_required_categories") or ["letter", "digit"]
         return {
-            "site_title": data.get("site_title"),
+            "site_title": site.get("site_title"),
             "site_logo": logo_url,
-            "allow_partner_register": data.get("allow_partner_register"),
-            "ticket_attachment_extensions": data.get("ticket_attachment_extensions") or [],
-            "ticket_project_phases": data.get("ticket_project_phases") or [],
-            "ticket_categories": data.get("ticket_categories") or [],
-            "ticket_root_causes": data.get("ticket_root_causes") or [],
-            "ticket_description_templates": data.get("ticket_description_templates") or [],
-            "login_security_enabled": data.get("login_security_enabled", True),
-            "login_account_ip_fail_limit": data.get("login_account_ip_fail_limit", 5),
-            "login_account_ip_lock_minutes": data.get("login_account_ip_lock_minutes", 60),
-            "login_ip_fail_limit": data.get("login_ip_fail_limit", 20),
-            "login_ip_lock_minutes": data.get("login_ip_lock_minutes", 60),
-            "login_fail_window_minutes": data.get("login_fail_window_minutes", 60),
-            "login_generic_error_enabled": data.get("login_generic_error_enabled", True),
+            "allow_partner_register": site.get("allow_partner_register", True),
+            "ticket_attachment_extensions": ticket.get("ticket_attachment_extensions") or [],
+            "ticket_project_phases": ticket.get("ticket_project_phases") or [],
+            "ticket_categories": ticket.get("ticket_categories") or [],
+            "ticket_root_causes": ticket.get("ticket_root_causes") or [],
+            "ticket_description_templates": ticket.get("ticket_description_templates") or [],
+            "login_security_enabled": login_security.get("login_security_enabled", True),
+            "login_account_ip_fail_limit": login_security.get("login_account_ip_fail_limit", 5),
+            "login_account_ip_lock_minutes": login_security.get("login_account_ip_lock_minutes", 60),
+            "login_ip_fail_limit": login_security.get("login_ip_fail_limit", 20),
+            "login_ip_lock_minutes": login_security.get("login_ip_lock_minutes", 60),
+            "login_fail_window_minutes": login_security.get("login_fail_window_minutes", 60),
+            "login_generic_error_enabled": login_security.get("login_generic_error_enabled", True),
+            "password_min_length": login_security.get("password_min_length", 8),
+            "password_required_categories": required_categories,
+            "password_min_category_count": len(required_categories),
         }
 
+    async def _get_merged_raw(self) -> dict:
+        sections = await self._ensure_all_sections()
+        data = {}
+        for section_data in sections.values():
+            data.update(section_data)
+        return data
+
+    async def get_full_dict(self) -> dict:
+        return await self._get_merged_raw()
+
     async def test_webdav_connection(self, payload: dict | None = None) -> dict:
-        setting = await self.get_or_create()
-        db_data = await setting.to_dict()
+        db_data = await self._get_merged_raw()
         req_data = payload or {}
 
         enabled = req_data.get("webdav_enabled", db_data.get("webdav_enabled"))
-        base_url = (req_data.get("webdav_base_url") if req_data.get("webdav_base_url") is not None else db_data.get("webdav_base_url"))
-        username = (req_data.get("webdav_username") if req_data.get("webdav_username") is not None else db_data.get("webdav_username"))
+        base_url = req_data.get("webdav_base_url") if req_data.get("webdav_base_url") is not None else db_data.get("webdav_base_url")
+        username = req_data.get("webdav_username") if req_data.get("webdav_username") is not None else db_data.get("webdav_username")
         pwd_input = req_data.get("webdav_password")
         if pwd_input == "******":
             password = db_data.get("webdav_password")
@@ -96,32 +210,111 @@ class SystemSettingController:
             raise HTTPException(status_code=400, detail=f"连接失败：{exc}")
 
         if response.status_code not in {200, 207}:
-            logger.warning(
-                "[settings.webdav.test] failed status={} base_url={} username={}",
-                response.status_code,
-                base_url,
-                username,
-            )
             raise HTTPException(status_code=400, detail=f"连接失败，HTTP状态码：{response.status_code}")
 
-        logger.info("[settings.webdav.test] success base_url={} username={}", base_url, username)
-        return {
-            "ok": True,
-            "status_code": response.status_code,
-            "message": "WebDAV连接成功",
+        return {"ok": True, "status_code": response.status_code, "message": "WebDAV连接成功"}
+
+    async def update(self, payload: dict) -> None:
+        logger.info("[settings.update] start keys={}", sorted(list(payload.keys())))
+        sections = await self._ensure_all_sections()
+
+        if payload.get("smtp_password") == "******":
+            payload["smtp_password"] = sections["mail"].get("smtp_password")
+        if payload.get("webdav_password") == "******":
+            payload["webdav_password"] = sections["webdav"].get("webdav_password")
+
+        site_keys = {"site_title", "site_logo", "allow_partner_register"}
+        ticket_keys = {
+            "ticket_attachment_extensions",
+            "ticket_project_phases",
+            "ticket_categories",
+            "ticket_root_causes",
+            "ticket_description_templates",
+        }
+        login_keys = {
+            "login_security_enabled",
+            "login_account_ip_fail_limit",
+            "login_account_ip_lock_minutes",
+            "login_ip_fail_limit",
+            "login_ip_lock_minutes",
+            "login_fail_window_minutes",
+            "login_generic_error_enabled",
+            "password_min_length",
+            "password_required_categories",
+        }
+        ticket_notify_keys = {"ticket_notify_by_role"}
+        mail_keys = {
+            "smtp_host",
+            "smtp_port",
+            "smtp_username",
+            "smtp_password",
+            "smtp_sender",
+            "smtp_sender_name",
+            "smtp_use_tls",
+            "smtp_use_ssl",
+        }
+        mail_template_keys = {
+            "email_verify_subject",
+            "email_verify_is_html",
+            "email_verify_template",
+            "register_review_approve_subject",
+            "register_review_approve_is_html",
+            "register_review_approve_template",
+            "register_review_reject_subject",
+            "register_review_reject_is_html",
+            "register_review_reject_template",
+            "reset_password_subject",
+            "reset_password_is_html",
+            "reset_password_template",
+            "admin_reset_password_subject",
+            "admin_reset_password_is_html",
+            "admin_reset_password_template",
+            "ticket_notify_subject",
+            "ticket_notify_is_html",
+            "ticket_notify_template",
+        }
+        webdav_keys = {
+            "webdav_enabled",
+            "webdav_base_url",
+            "webdav_username",
+            "webdav_password",
+            "webdav_share_default_expire_hours",
+            "webdav_signature_secret",
         }
 
-    async def update(self, payload: dict) -> SystemSetting:
-        logger.info("[settings.update] start keys={}", sorted(list(payload.keys())))
-        setting = await self.get_or_create()
-        if payload.get("smtp_password") == "******":
-            payload.pop("smtp_password", None)
-        if payload.get("webdav_password") == "******":
-            payload.pop("webdav_password", None)
-        setting.update_from_dict(payload)
-        await setting.save()
-        logger.info("[settings.update] success setting_id={}", setting.id)
-        return setting
+        mapping = {
+            "site": site_keys,
+            "ticket": ticket_keys,
+            "login_security": login_keys,
+            "ticket_notify": ticket_notify_keys,
+            "mail": mail_keys,
+            "mail_template": mail_template_keys,
+            "webdav": webdav_keys,
+        }
+
+        for section, keys in mapping.items():
+            item = await self._get_or_create_section(section)
+            merged = dict(self._DEFAULTS[section])
+            merged.update(item.data or {})
+            for key in keys:
+                if key in payload:
+                    merged[key] = payload[key]
+            item.data = merged
+            await item.save()
+
+    async def get_logo_abs_path(self) -> str:
+        site = (await self._ensure_all_sections())["site"]
+        site_logo = site.get("site_logo")
+        if not site_logo:
+            raise HTTPException(status_code=404, detail="未配置站点Logo")
+
+        abs_path = os.path.abspath(os.path.join(settings.UPLOAD_DIR, site_logo))
+        upload_root = os.path.abspath(settings.UPLOAD_DIR)
+        if not abs_path.startswith(upload_root):
+            raise HTTPException(status_code=400, detail="Logo路径非法")
+        if not os.path.exists(abs_path):
+            raise HTTPException(status_code=404, detail="Logo文件不存在")
+        return abs_path
 
     async def upload_logo(self, file: UploadFile) -> str:
         logger.info("[settings.logo] start filename={} content_type={}", file.filename, file.content_type)
@@ -149,28 +342,16 @@ class SystemSettingController:
         filename = f"{uuid.uuid4().hex}.{ext}"
         rel_path = os.path.join(rel_dir, filename).replace("\\", "/")
         abs_path = os.path.join(settings.UPLOAD_DIR, rel_path)
-
         with open(abs_path, "wb") as f:
             f.write(data)
 
-        setting = await self.get_or_create()
-        setting.site_logo = rel_path
-        await setting.save()
-        logger.info("[settings.logo] success setting_id={} path={}", setting.id, rel_path)
+        item = await self._get_or_create_section("site")
+        merged = dict(self._DEFAULTS["site"])
+        merged.update(item.data or {})
+        merged["site_logo"] = rel_path
+        item.data = merged
+        await item.save()
         return rel_path
-
-    async def get_logo_abs_path(self) -> str:
-        setting = await self.get_or_create()
-        if not setting.site_logo:
-            raise HTTPException(status_code=404, detail="未配置站点Logo")
-
-        abs_path = os.path.abspath(os.path.join(settings.UPLOAD_DIR, setting.site_logo))
-        upload_root = os.path.abspath(settings.UPLOAD_DIR)
-        if not abs_path.startswith(upload_root):
-            raise HTTPException(status_code=400, detail="Logo路径非法")
-        if not os.path.exists(abs_path):
-            raise HTTPException(status_code=404, detail="Logo文件不存在")
-        return abs_path
 
 
 system_setting_controller = SystemSettingController()

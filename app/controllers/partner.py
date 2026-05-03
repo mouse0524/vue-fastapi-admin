@@ -90,6 +90,8 @@ class PartnerController:
             email=email, username=username, phone=phone, hardware_id=hardware_id
         )
 
+        await user_controller.validate_password_policy(payload.password)
+
         password_hash = get_password_hash(payload.password)
         return await PartnerRegistration.create(
             register_type=register_type,

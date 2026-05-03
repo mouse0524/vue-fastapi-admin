@@ -238,10 +238,10 @@ const columns = [
             onPositiveClick: async () => {
               try {
                 await api.resetPassword({ user_id: row.id });
-                $message.success('密码已重置为初始密码，请尽快通知用户修改');
+                $message.success(`密码已重置并发送到 ${row.email || '用户邮箱'}，请提醒用户及时修改`);
                 await $table.value?.handleSearch();
               } catch (error) {
-                $message.error('重置失败，请稍后重试：' + error.message);
+                $message.error(error?.msg || error?.message || '重置失败，请稍后重试');
               }
             },
             onNegativeClick: () => {},
@@ -263,7 +263,7 @@ const columns = [
                 ),
                 [[vPermission, 'post/api/v1/user/reset_password']]
               ),
-            default: () => h('div', {}, '将重置为初始密码 123456，是否确认执行？'),
+            default: () => h('div', {}, '将生成随机强密码并邮件发送给该用户，是否确认执行？'),
           }
         ),
       ]

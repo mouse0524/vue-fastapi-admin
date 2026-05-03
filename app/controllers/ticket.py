@@ -1,5 +1,6 @@
 import asyncio
 import os
+import re
 import uuid
 from datetime import datetime
 from mimetypes import guess_type
@@ -9,6 +10,7 @@ from fastapi import HTTPException, UploadFile
 from tortoise.expressions import Q
 
 from app.log import logger
+from app.controllers.mail import mail_controller
 from app.controllers.system_setting import system_setting_controller
 from app.models.admin import Ticket, TicketActionLog, TicketAttachment, User
 from app.models.enums import TicketActionType, TicketStatus
@@ -18,6 +20,98 @@ from app.utils.http_headers import build_download_content_disposition
 
 
 class TicketController:
+    _ROLE_NOTIFY_MAP = {
+        "用户": "用户",
+        "渠道商": "代理商",
+        "代理商": "代理商",
+        "客服": "客服",
+        "技术": "技术",
+        "管理员": "客服",
+    }
+
+    @staticmethod
+    def _status_notify_recipients(status: TicketStatus, ticket: Ticket) -> list[int]:
+        if status == TicketStatus.PENDING_REVIEW:
+            return []
+        if status == TicketStatus.TECH_PROCESSING:
+            return [ticket.tech_id] if ticket.tech_id else []
+        if status in {TicketStatus.CS_REJECTED, TicketStatus.TECH_REJECTED, TicketStatus.DONE}:
+            return [ticket.submitter_id] if ticket.submitter_id else []
+        return []
+
+    async def _notify_ticket_status_if_needed(self, *, ticket: Ticket, operator_id: int) -> None:
+        setting = await system_setting_controller.get_safe_dict()
+        notify_map = setting.get("ticket_notify_by_role") or {}
+        all_users = await User.filter(is_active=True).prefetch_related("roles")
+        recipients: list[User] = []
+        current_status = str(ticket.status)
+
+        for item in all_users:
+            if item.id == operator_id or not item.email:
+                continue
+            role_names = [role.name for role in await item.roles]
+            if item.is_superuser:
+                role_names.append("管理员")
+
+            normalized_roles = {self._ROLE_NOTIFY_MAP.get(role, role) for role in role_names}
+            should_notify = False
+            for role_name in normalized_roles:
+                statuses = notify_map.get(role_name) or []
+                if current_status in statuses:
+                    should_notify = True
+                    break
+            if not should_notify:
+                continue
+
+            if current_status in {TicketStatus.CS_REJECTED.value, TicketStatus.TECH_REJECTED.value, TicketStatus.DONE.value}:
+                if item.id != ticket.submitter_id:
+                    continue
+            if current_status == TicketStatus.TECH_PROCESSING.value and ticket.tech_id and item.id != ticket.tech_id:
+                continue
+            recipients.append(item)
+
+        if not recipients:
+            return
+
+        operator = await User.filter(id=operator_id).first()
+        operator_name = (operator.alias or operator.username) if operator else str(operator_id)
+        for target in recipients:
+            if not target.email:
+                continue
+            try:
+                await mail_controller.send_ticket_status_notice(
+                    ticket=ticket,
+                    to_user=target,
+                    status=ticket.status,
+                    operator_name=operator_name,
+                )
+            except Exception:
+                logger.warning(
+                    "[ticket.notify] send_failed ticket_id={} status={} to_user_id={}",
+                    ticket.id,
+                    ticket.status,
+                    target.id,
+                    exc_info=True,
+                )
+    @staticmethod
+    def _sanitize_rich_html(value: str | None) -> str:
+        text = str(value or "")
+        if not text:
+            return ""
+
+        # Strip dangerous tags first
+        text = re.sub(r"<\s*(script|iframe|object|embed|link|style)[^>]*>.*?<\s*/\s*\1\s*>", "", text, flags=re.I | re.S)
+        text = re.sub(r"<\s*(script|iframe|object|embed|link|style)[^>]*?/\s*>", "", text, flags=re.I | re.S)
+
+        # Remove event handlers like onclick/onerror
+        text = re.sub(r"\son[a-zA-Z]+\s*=\s*([\"']).*?\1", "", text, flags=re.I | re.S)
+        text = re.sub(r"\son[a-zA-Z]+\s*=\s*[^\s>]+", "", text, flags=re.I)
+
+        # Remove javascript: href/src
+        text = re.sub(r"\s(href|src)\s*=\s*([\"'])\s*javascript:[^\2]*\2", "", text, flags=re.I)
+        text = re.sub(r"\s(href|src)\s*=\s*javascript:[^\s>]+", "", text, flags=re.I)
+        return text
+
     @staticmethod
     def _next_ticket_no() -> str:
         return f"TK{datetime.now().strftime('%Y%m%d%H%M%S')}{uuid.uuid4().hex[:6].upper()}"
@@ -97,6 +191,7 @@ class TicketController:
             payload.get("title"),
         )
         attachment_ids = payload.pop("attachment_ids", [])
+        payload["description"] = self._sanitize_rich_html(payload.get("description"))
         logger.info("[ticket.create] parsed attachment_ids={} submitter_id={}", attachment_ids, submitter_id)
         ticket = await Ticket.create(
             ticket_no=self._next_ticket_no(),
@@ -117,6 +212,7 @@ class TicketController:
             operator_id=submitter_id,
             comment=None,
         )
+        await self._notify_ticket_status_if_needed(ticket=ticket, operator_id=submitter_id)
         logger.info(
             "[ticket.create] success ticket_id={} ticket_no={} submitter_id={} attachment_count={}",
             ticket.id,
@@ -192,6 +288,7 @@ class TicketController:
             raise HTTPException(status_code=400, detail="当前状态不可进行客服审核")
 
         old_status = ticket.status
+        comment = self._sanitize_rich_html(comment)
         if approved:
             ticket.status = TicketStatus.TECH_PROCESSING
             ticket.reviewer_id = reviewer_id
@@ -212,6 +309,7 @@ class TicketController:
             operator_id=reviewer_id,
             comment=comment,
         )
+        await self._notify_ticket_status_if_needed(ticket=ticket, operator_id=reviewer_id)
         logger.info(
             "[ticket.cs_review] success ticket_id={} from_status={} to_status={} reviewer_id={}",
             ticket.id,
@@ -237,6 +335,7 @@ class TicketController:
             action,
             comment,
         )
+        comment = self._sanitize_rich_html(comment)
         ticket = await self.get_ticket(ticket_id)
         if ticket.status != TicketStatus.TECH_PROCESSING:
             raise HTTPException(status_code=400, detail="当前状态不可进行技术处理")
@@ -279,6 +378,7 @@ class TicketController:
             operator_id=tech_id,
             comment=comment,
         )
+        await self._notify_ticket_status_if_needed(ticket=ticket, operator_id=tech_id)
         logger.info(
             "[ticket.tech_action] success ticket_id={} from_status={} to_status={} tech_id={}",
             ticket.id,
@@ -297,15 +397,6 @@ class TicketController:
         attachment_ids: list[int],
     ) -> Ticket:
         ticket = await self.get_ticket(ticket_id)
-        logger.info(
-            "[ticket.update] loaded ticket_id={} db_status_raw={} db_status_type={} submitter_id={} payload_keys={} attachment_ids={}",
-            ticket.id,
-            ticket.status,
-            type(ticket.status).__name__,
-            submitter_id,
-            list(payload.keys()),
-            attachment_ids,
-        )
         if ticket.submitter_id != submitter_id:
             raise HTTPException(status_code=403, detail="只能由提交人编辑工单")
 
@@ -314,13 +405,8 @@ class TicketController:
 
         old_status = ticket.status
         old_status_value = str(old_status)
-        logger.info(
-            "[ticket.update] before mutate ticket_id={} old_status_raw={} old_status_value={} old_status_type={}",
-            ticket.id,
-            old_status,
-            old_status_value,
-            type(old_status).__name__,
-        )
+        if "description" in payload:
+            payload["description"] = self._sanitize_rich_html(payload.get("description"))
         for k, v in payload.items():
             setattr(ticket, k, v)
 
@@ -338,24 +424,8 @@ class TicketController:
             action = TicketActionType.RESUBMIT
             action_comment = "提交者编辑工单"
 
-        logger.info(
-            "[ticket.update] ticket_id={} submitter_id={} from_status={} to_status={} action={}",
-            ticket.id,
-            submitter_id,
-            old_status_value,
-            ticket.status,
-            action,
-        )
-
         await ticket.save()
         await ticket.refresh_from_db()
-        logger.info(
-            "[ticket.update] after save ticket_id={} persisted_status={} persisted_status_type={} reject_reason={}",
-            ticket.id,
-            ticket.status,
-            type(ticket.status).__name__,
-            ticket.reject_reason,
-        )
 
         if attachment_ids:
             await self._bind_attachments(ticket_id=ticket.id, attachment_ids=attachment_ids, owner_ids=[submitter_id, 0])
@@ -368,6 +438,7 @@ class TicketController:
             operator_id=submitter_id,
             comment=action_comment,
         )
+        await self._notify_ticket_status_if_needed(ticket=ticket, operator_id=submitter_id)
         return ticket
 
     async def resubmit_ticket(
@@ -389,7 +460,7 @@ class TicketController:
         old_status = ticket.status
         ticket.status = TicketStatus.PENDING_REVIEW
         if description:
-            ticket.description = description
+            ticket.description = self._sanitize_rich_html(description)
         ticket.reject_reason = None
         await ticket.save()
 
@@ -404,6 +475,7 @@ class TicketController:
             operator_id=submitter_id,
             comment="重提工单",
         )
+        await self._notify_ticket_status_if_needed(ticket=ticket, operator_id=submitter_id)
         logger.info(
             "[ticket.resubmit] success ticket_id={} from_status={} to_status={} submitter_id={}",
             ticket.id,

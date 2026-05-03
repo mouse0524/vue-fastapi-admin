@@ -5,12 +5,14 @@ from fastapi.exceptions import HTTPException
 
 from app.core.crud import CRUDBase
 from app.log import logger
+from app.controllers.mail import mail_controller
 from app.models.admin import User
 from app.schemas.login import CredentialsSchema
 from app.schemas.users import UserCreate, UserUpdate
-from app.utils.password import get_password_hash, verify_password
+from app.utils.password import generate_strong_password, get_password_hash, is_password_strong, verify_password
 
 from .role import role_controller
+from .system_setting import system_setting_controller
 
 
 class UserController(CRUDBase[User, UserCreate, UserUpdate]):
@@ -25,6 +27,7 @@ class UserController(CRUDBase[User, UserCreate, UserUpdate]):
 
     async def create_user(self, obj_in: UserCreate) -> User:
         logger.info("[user.create] start username={} email={} dept_id={}", obj_in.username, obj_in.email, obj_in.dept_id)
+        await self.validate_password_policy(obj_in.password)
         obj_in.password = get_password_hash(password=obj_in.password)
         obj = await self.create(obj_in)
         if obj_in.role_ids:
@@ -71,15 +74,31 @@ class UserController(CRUDBase[User, UserCreate, UserUpdate]):
             await user.roles.add(role_obj)
         logger.info("[user.role] update success user_id={} role_count={}", user.id, len(role_ids))
 
-    async def reset_password(self, user_id: int):
+    async def reset_password(self, user_id: int) -> str:
         logger.info("[user.reset_password] start user_id={}", user_id)
         user_obj = await self.get(id=user_id)
         if user_obj.is_superuser:
             logger.warning("[user.reset_password] deny_superuser user_id={}", user_id)
             raise HTTPException(status_code=403, detail="不允许重置超级管理员密码")
-        user_obj.password = get_password_hash(password="123456")
+        if not user_obj.email:
+            raise HTTPException(status_code=400, detail="该用户未配置邮箱，无法发送重置通知")
+        config = await system_setting_controller.get_public_config()
+        min_length = int(config.get("password_min_length", 8) or 8)
+        min_categories = len(config.get("password_required_categories") or ["letter", "digit"])
+        temp_password = generate_strong_password(min_length=max(min_length, 10), min_categories=min_categories)
+        user_obj.password = get_password_hash(password=temp_password)
         await user_obj.save()
+        await mail_controller.send_admin_reset_password_notice(to_user=user_obj, temp_password=temp_password)
         logger.info("[user.reset_password] success user_id={} username={}", user_obj.id, user_obj.username)
+        return temp_password
+
+    async def validate_password_policy(self, raw_password: str) -> None:
+        config = await system_setting_controller.get_public_config()
+        min_length = int(config.get("password_min_length", 8) or 8)
+        min_categories = len(config.get("password_required_categories") or ["letter", "digit"])
+        ok, message = is_password_strong(raw_password, min_length=min_length, min_categories=min_categories)
+        if not ok:
+            raise HTTPException(status_code=400, detail=message)
 
 
 user_controller = UserController()

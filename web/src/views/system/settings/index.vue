@@ -4,6 +4,8 @@ import {
   NAlert,
   NButton,
   NCard,
+  NCheckbox,
+  NCheckboxGroup,
   NDivider,
   NDynamicTags,
   NForm,
@@ -11,6 +13,7 @@ import {
   NInput,
   NInputNumber,
   NModal,
+  NSpace,
   NSwitch,
   NTabPane,
   NTabs,
@@ -19,6 +22,7 @@ import {
 import CommonPage from '@/components/page/CommonPage.vue'
 import api from '@/api'
 import { useAppStore } from '@/store'
+import { sanitizeHtml } from '@/utils'
 
 defineOptions({ name: '系统设置' })
 
@@ -45,6 +49,14 @@ const form = ref({
   login_ip_lock_minutes: 60,
   login_fail_window_minutes: 60,
   login_generic_error_enabled: true,
+  password_min_length: 8,
+  password_required_categories: ['letter', 'digit'],
+  ticket_notify_by_role: {
+    用户: ['cs_rejected', 'tech_rejected', 'done'],
+    代理商: ['cs_rejected', 'tech_rejected', 'done'],
+    客服: ['pending_review'],
+    技术: ['tech_processing'],
+  },
   smtp_host: '',
   smtp_port: 465,
   smtp_username: '',
@@ -62,6 +74,18 @@ const form = ref({
   register_review_reject_subject: '注册审核结果通知',
   register_review_reject_is_html: true,
   register_review_reject_template: '您好，{contact_name}，您的{register_type}注册申请已驳回。驳回理由：{reason}',
+  reset_password_subject: '密码重置验证码',
+  reset_password_is_html: true,
+  reset_password_template:
+    '<div style="font-family:Arial,\'PingFang SC\',\'Microsoft YaHei\',sans-serif;color:#1f2937;line-height:1.7;background:#f8fbff;border:1px solid #dbeafe;border-radius:12px;padding:16px 18px;"><h2 style="margin:0 0 12px;font-size:18px;color:#1d4ed8;">找回密码验证码</h2><p style="margin:0 0 10px;">您好，您正在进行密码重置操作，请使用以下验证码：</p><div style="display:inline-block;padding:10px 18px;border-radius:8px;background:#eff6ff;border:1px solid #bfdbfe;font-size:24px;font-weight:700;letter-spacing:4px;color:#1d4ed8;">{code}</div><p style="margin:12px 0 0;color:#6b7280;">验证码 {minutes} 分钟内有效，请勿泄露给他人。</p></div>',
+  admin_reset_password_subject: '账号密码已重置',
+  admin_reset_password_is_html: true,
+  admin_reset_password_template:
+    '<div style="font-family:Arial,\'PingFang SC\',\'Microsoft YaHei\',sans-serif;color:#1f2937;line-height:1.7;background:#fffaf0;border:1px solid #fde68a;border-radius:12px;padding:16px 18px;"><h2 style="margin:0 0 12px;font-size:18px;color:#b45309;">账号密码已重置</h2><p style="margin:0 0 8px;">您好，<b>{username}</b>：</p><p style="margin:0 0 8px;">管理员已重置您的账号密码，请使用以下临时密码登录：</p><div style="display:inline-block;padding:10px 14px;border-radius:8px;background:#fff7ed;border:1px solid #fed7aa;font-size:20px;font-weight:700;color:#c2410c;">{password}</div><p style="margin:12px 0 0;color:#6b7280;">登录后请尽快在个人中心修改密码。</p></div>',
+  ticket_notify_subject: '工单状态提醒：{ticket_no}',
+  ticket_notify_is_html: true,
+  ticket_notify_template:
+    '<div style="font-family:Arial,\'PingFang SC\',\'Microsoft YaHei\',sans-serif;color:#1f2937;line-height:1.7;background:#f8fbff;border:1px solid #dbeafe;border-radius:12px;padding:16px 18px;"><h2 style="margin:0 0 12px;font-size:18px;color:#1d4ed8;">工单状态提醒</h2><p style="margin:0 0 8px;">您好，<b>{name}</b>：</p><p style="margin:0 0 6px;">工单编号：<b>{ticket_no}</b></p><p style="margin:0 0 6px;">工单标题：{title}</p><p style="margin:0 0 6px;">当前状态：<b style="color:#1d4ed8;">{status}</b></p><p style="margin:0 0 6px;">操作人：{operator}</p><p style="margin:8px 0 0;color:#6b7280;">请及时登录系统处理。</p></div>',
   webdav_enabled: false,
   webdav_base_url: '',
   webdav_username: '',
@@ -76,6 +100,8 @@ const previewParams = ref({
   reason: '资料不完整，请补充设备机器码',
   code: '123456',
   minutes: 10,
+  username: 'zhangsan',
+  password: 'Tmp#8291',
 })
 
 const presetTemplates = {
@@ -107,6 +133,48 @@ const presetTemplates = {
   <p style="margin:0;color:#6b7280;">请根据提示完善信息后重新提交。</p>
 </div>
 `.trim(),
+  resetPwdSubject: '【系统通知】找回密码验证码',
+  resetPwdHtml:
+    '<div style="font-family:Arial,\'PingFang SC\',\'Microsoft YaHei\',sans-serif;color:#1f2937;line-height:1.7;background:#f8fbff;border:1px solid #dbeafe;border-radius:12px;padding:16px 18px;"><h2 style="margin:0 0 12px;font-size:18px;color:#1d4ed8;">找回密码验证码</h2><p style="margin:0 0 10px;">您好，您正在进行密码重置操作，请使用以下验证码：</p><div style="display:inline-block;padding:10px 18px;border-radius:8px;background:#eff6ff;border:1px solid #bfdbfe;font-size:24px;font-weight:700;letter-spacing:4px;color:#1d4ed8;">{code}</div><p style="margin:12px 0 0;color:#6b7280;">验证码 {minutes} 分钟内有效，请勿泄露给他人。</p></div>',
+  adminResetSubject: '【系统通知】账号密码已重置',
+  adminResetHtml:
+    '<div style="font-family:Arial,\'PingFang SC\',\'Microsoft YaHei\',sans-serif;color:#1f2937;line-height:1.7;background:#fffaf0;border:1px solid #fde68a;border-radius:12px;padding:16px 18px;"><h2 style="margin:0 0 12px;font-size:18px;color:#b45309;">账号密码已重置</h2><p style="margin:0 0 8px;">您好，<b>{username}</b>：</p><p style="margin:0 0 8px;">管理员已重置您的账号密码，请使用以下临时密码登录：</p><div style="display:inline-block;padding:10px 14px;border-radius:8px;background:#fff7ed;border:1px solid #fed7aa;font-size:20px;font-weight:700;color:#c2410c;">{password}</div><p style="margin:12px 0 0;color:#6b7280;">登录后请尽快在个人中心修改密码。</p></div>',
+  ticketNotifySubject: '【系统通知】工单状态提醒',
+  ticketNotifyHtml:
+    '<div style="font-family:Arial,\'PingFang SC\',\'Microsoft YaHei\',sans-serif;color:#1f2937;line-height:1.7;background:#f8fbff;border:1px solid #dbeafe;border-radius:12px;padding:16px 18px;"><h2 style="margin:0 0 12px;font-size:18px;color:#1d4ed8;">工单状态提醒</h2><p style="margin:0 0 8px;">您好，<b>{name}</b>：</p><p style="margin:0 0 6px;">工单编号：<b>{ticket_no}</b></p><p style="margin:0 0 6px;">工单标题：{title}</p><p style="margin:0 0 6px;">当前状态：<b style="color:#1d4ed8;">{status}</b></p><p style="margin:0 0 6px;">操作人：{operator}</p><p style="margin:8px 0 0;color:#6b7280;">请及时登录系统处理。</p></div>',
+}
+
+const ticketNotifyRoleOptions = {
+  用户: [
+    { label: '客服驳回', value: 'cs_rejected' },
+    { label: '技术驳回', value: 'tech_rejected' },
+    { label: '处理完成', value: 'done' },
+  ],
+  代理商: [
+    { label: '客服驳回', value: 'cs_rejected' },
+    { label: '技术驳回', value: 'tech_rejected' },
+    { label: '处理完成', value: 'done' },
+  ],
+  客服: [{ label: '提交后待客服审核', value: 'pending_review' }],
+  技术: [{ label: '通过后待技术处理', value: 'tech_processing' }],
+}
+
+const passwordCategoryOptions = [
+  { label: '字母', value: 'letter' },
+  { label: '数字', value: 'digit' },
+  { label: '特殊字符', value: 'special' },
+]
+
+const ticketNotifyRoles = ['用户', '代理商', '客服', '技术']
+
+function normalizeTicketNotifyByRole(raw = {}) {
+  const normalized = {}
+  ticketNotifyRoles.forEach((roleName) => {
+    const allowed = new Set((ticketNotifyRoleOptions[roleName] || []).map((item) => item.value))
+    const selected = Array.isArray(raw[roleName]) ? raw[roleName] : []
+    normalized[roleName] = selected.filter((item) => allowed.has(item))
+  })
+  return normalized
 }
 
 const rules = {
@@ -169,6 +237,16 @@ const rules = {
   login_ip_fail_limit: { required: true, type: 'number', min: 1, message: '请输入正确的IP失败阈值', trigger: ['blur', 'change'] },
   login_ip_lock_minutes: { required: true, type: 'number', min: 1, message: '请输入正确的IP锁定时长', trigger: ['blur', 'change'] },
   login_fail_window_minutes: { required: true, type: 'number', min: 1, message: '请输入正确的失败统计窗口', trigger: ['blur', 'change'] },
+  password_min_length: { required: true, type: 'number', min: 8, message: '密码最小长度不能小于8', trigger: ['blur', 'change'] },
+  password_required_categories: {
+    required: true,
+    validator: () => {
+      const items = form.value.password_required_categories || []
+      if (!items.length) return new Error('请至少选择一种密码类别')
+      return true
+    },
+    trigger: ['change', 'blur'],
+  },
 }
 
 onMounted(() => {
@@ -194,6 +272,7 @@ async function loadData() {
       ticket_description_templates: Array.isArray(res.data?.ticket_description_templates)
         ? res.data.ticket_description_templates
         : form.value.ticket_description_templates,
+      ticket_notify_by_role: normalizeTicketNotifyByRole(res.data?.ticket_notify_by_role || form.value.ticket_notify_by_role),
     }
     const publicRes = await api.getPublicConfig()
     appStore.setSiteConfig(publicRes.data || {})
@@ -207,7 +286,11 @@ function save() {
     if (err) return
     try {
       saving.value = true
-      await api.updateSystemSettings(form.value)
+      const payload = {
+        ...form.value,
+        ticket_notify_by_role: normalizeTicketNotifyByRole(form.value.ticket_notify_by_role),
+      }
+      await api.updateSystemSettings(payload)
       $message.success('设置已保存并生效')
       const publicRes = await api.getPublicConfig()
       appStore.setSiteConfig(publicRes.data || {})
@@ -259,6 +342,10 @@ function renderTemplate(template, params) {
   return content
 }
 
+function renderSafeTemplate(template, params) {
+  return sanitizeHtml(renderTemplate(template, params))
+}
+
 function openPreview() {
   previewVisible.value = true
 }
@@ -287,6 +374,18 @@ function applyPresetHtmlTemplates() {
   form.value.register_review_reject_subject = presetTemplates.rejectSubject
   form.value.register_review_reject_template = presetTemplates.rejectHtml
   form.value.register_review_reject_is_html = true
+
+  form.value.reset_password_subject = presetTemplates.resetPwdSubject
+  form.value.reset_password_template = presetTemplates.resetPwdHtml
+  form.value.reset_password_is_html = true
+
+  form.value.admin_reset_password_subject = presetTemplates.adminResetSubject
+  form.value.admin_reset_password_template = presetTemplates.adminResetHtml
+  form.value.admin_reset_password_is_html = true
+
+  form.value.ticket_notify_subject = presetTemplates.ticketNotifySubject
+  form.value.ticket_notify_template = presetTemplates.ticketNotifyHtml
+  form.value.ticket_notify_is_html = true
 
   $message.success('推荐模板已应用，请保存后生效')
 }
@@ -344,6 +443,19 @@ function applyPresetHtmlTemplates() {
                   <NButton dashed @click="addDescriptionTemplate">新增模板</NButton>
                 </div>
               </NFormItem>
+              <NDivider title-placement="left">工单提醒</NDivider>
+              <NAlert type="info" class="mb-12">
+                按角色配置提醒节点：用户/代理商（客服驳回、技术驳回、处理完成），客服（提交后待客服审核），技术（通过后待技术处理）。
+              </NAlert>
+              <NFormItem v-for="roleName in ticketNotifyRoles" :key="roleName" :label="`${roleName}提醒节点`">
+                <NCheckboxGroup v-model:value="form.ticket_notify_by_role[roleName]">
+                  <div style="display:grid;grid-template-columns:repeat(2,minmax(220px,1fr));gap:8px 12px;">
+                    <NCheckbox v-for="item in ticketNotifyRoleOptions[roleName]" :key="item.value" :value="item.value">
+                      {{ item.label }}
+                    </NCheckbox>
+                  </div>
+                </NCheckboxGroup>
+              </NFormItem>
             </NCard>
           </NTabPane>
 
@@ -372,6 +484,16 @@ function applyPresetHtmlTemplates() {
               </NFormItem>
               <NFormItem label="统一错误提示">
                 <NSwitch v-model:value="form.login_generic_error_enabled" />
+              </NFormItem>
+              <NFormItem label="密码最小长度" path="password_min_length">
+                <NInputNumber v-model:value="form.password_min_length" :min="8" :max="64" />
+              </NFormItem>
+              <NFormItem label="密码类别" path="password_required_categories">
+                <NCheckboxGroup v-model:value="form.password_required_categories">
+                  <NSpace>
+                    <NCheckbox v-for="item in passwordCategoryOptions" :key="item.value" :value="item.value">{{ item.label }}</NCheckbox>
+                  </NSpace>
+                </NCheckboxGroup>
               </NFormItem>
             </NCard>
           </NTabPane>
@@ -441,7 +563,7 @@ function applyPresetHtmlTemplates() {
 
           <NTabPane name="template" tab="邮件模板">
             <NAlert type="info" class="mb-12">
-              验证码模板支持变量：{code}、{minutes}；审核模板支持变量：{contact_name}、{register_type}、{reason}
+              验证码模板支持变量：{code}、{minutes}；审核模板支持变量：{contact_name}、{register_type}、{reason}；管理员重置通知支持变量：{username}、{password}、{email}；工单提醒支持变量：{name}、{ticket_no}、{title}、{status}、{operator}
             </NAlert>
             <div class="mb-12" flex items-center gap-12>
               <NButton type="primary" ghost @click="applyPresetHtmlTemplates">一键应用推荐HTML模板</NButton>
@@ -458,6 +580,23 @@ function applyPresetHtmlTemplates() {
               <NFormItem label="邮件模板">
                 <NInput
                   v-model:value="form.email_verify_template"
+                  type="textarea"
+                  :autosize="{ minRows: 4, maxRows: 8 }"
+                  placeholder="支持变量 {code}、{minutes}"
+                />
+              </NFormItem>
+            </NCard>
+
+            <NCard size="small" title="找回密码验证码模板" class="mb-12">
+              <NFormItem label="邮件标题">
+                <NInput v-model:value="form.reset_password_subject" />
+              </NFormItem>
+              <NFormItem label="HTML格式">
+                <NSwitch v-model:value="form.reset_password_is_html" />
+              </NFormItem>
+              <NFormItem label="邮件模板">
+                <NInput
+                  v-model:value="form.reset_password_template"
                   type="textarea"
                   :autosize="{ minRows: 4, maxRows: 8 }"
                   placeholder="支持变量 {code}、{minutes}"
@@ -493,6 +632,40 @@ function applyPresetHtmlTemplates() {
                 />
               </NFormItem>
             </NCard>
+
+            <NCard size="small" title="管理员重置密码通知模板">
+              <NFormItem label="邮件标题">
+                <NInput v-model:value="form.admin_reset_password_subject" />
+              </NFormItem>
+              <NFormItem label="HTML格式">
+                <NSwitch v-model:value="form.admin_reset_password_is_html" />
+              </NFormItem>
+              <NFormItem label="邮件模板">
+                <NInput
+                  v-model:value="form.admin_reset_password_template"
+                  type="textarea"
+                  :autosize="{ minRows: 4, maxRows: 8 }"
+                  placeholder="支持变量 {username}、{password}、{email}"
+                />
+              </NFormItem>
+            </NCard>
+
+            <NCard size="small" title="工单提醒模板">
+              <NFormItem label="邮件标题">
+                <NInput v-model:value="form.ticket_notify_subject" />
+              </NFormItem>
+              <NFormItem label="HTML格式">
+                <NSwitch v-model:value="form.ticket_notify_is_html" />
+              </NFormItem>
+              <NFormItem label="邮件模板">
+                <NInput
+                  v-model:value="form.ticket_notify_template"
+                  type="textarea"
+                  :autosize="{ minRows: 4, maxRows: 8 }"
+                  placeholder="支持变量 {name}、{ticket_no}、{title}、{status}、{operator}"
+                />
+              </NFormItem>
+            </NCard>
           </NTabPane>
         </NTabs>
 
@@ -521,7 +694,25 @@ function applyPresetHtmlTemplates() {
             :autosize="{ minRows: 3, maxRows: 6 }"
             readonly
           />
-          <div v-else class="preview-html" v-html="renderTemplate(form.email_verify_template, previewParams)"></div>
+          <div v-else class="preview-html" v-html="renderSafeTemplate(form.email_verify_template, previewParams)"></div>
+        </NFormItem>
+
+        <NDivider title-placement="left">找回密码验证码</NDivider>
+        <NFormItem label="标题">
+          <NInput :value="form.reset_password_subject" readonly />
+        </NFormItem>
+        <NFormItem label="HTML格式">
+          <NSwitch :value="form.reset_password_is_html" disabled />
+        </NFormItem>
+        <NFormItem label="内容">
+          <NInput
+            v-if="!form.reset_password_is_html"
+            type="textarea"
+            :value="renderTemplate(form.reset_password_template, previewParams)"
+            :autosize="{ minRows: 3, maxRows: 6 }"
+            readonly
+          />
+          <div v-else class="preview-html" v-html="renderSafeTemplate(form.reset_password_template, previewParams)"></div>
         </NFormItem>
 
         <NDivider title-placement="left">审核通过通知</NDivider>
@@ -539,7 +730,7 @@ function applyPresetHtmlTemplates() {
             :autosize="{ minRows: 3, maxRows: 6 }"
             readonly
           />
-          <div v-else class="preview-html" v-html="renderTemplate(form.register_review_approve_template, previewParams)"></div>
+          <div v-else class="preview-html" v-html="renderSafeTemplate(form.register_review_approve_template, previewParams)"></div>
         </NFormItem>
 
         <NDivider title-placement="left">审核驳回通知</NDivider>
@@ -557,7 +748,43 @@ function applyPresetHtmlTemplates() {
             :autosize="{ minRows: 3, maxRows: 6 }"
             readonly
           />
-          <div v-else class="preview-html" v-html="renderTemplate(form.register_review_reject_template, previewParams)"></div>
+          <div v-else class="preview-html" v-html="renderSafeTemplate(form.register_review_reject_template, previewParams)"></div>
+        </NFormItem>
+
+        <NDivider title-placement="left">管理员重置密码通知</NDivider>
+        <NFormItem label="标题">
+          <NInput :value="form.admin_reset_password_subject" readonly />
+        </NFormItem>
+        <NFormItem label="HTML格式">
+          <NSwitch :value="form.admin_reset_password_is_html" disabled />
+        </NFormItem>
+        <NFormItem label="内容">
+          <NInput
+            v-if="!form.admin_reset_password_is_html"
+            type="textarea"
+            :value="renderTemplate(form.admin_reset_password_template, previewParams)"
+            :autosize="{ minRows: 3, maxRows: 6 }"
+            readonly
+          />
+          <div v-else class="preview-html" v-html="renderSafeTemplate(form.admin_reset_password_template, previewParams)"></div>
+        </NFormItem>
+
+        <NDivider title-placement="left">工单提醒</NDivider>
+        <NFormItem label="标题">
+          <NInput :value="form.ticket_notify_subject" readonly />
+        </NFormItem>
+        <NFormItem label="HTML格式">
+          <NSwitch :value="form.ticket_notify_is_html" disabled />
+        </NFormItem>
+        <NFormItem label="内容">
+          <NInput
+            v-if="!form.ticket_notify_is_html"
+            type="textarea"
+            :value="renderTemplate(form.ticket_notify_template, previewParams)"
+            :autosize="{ minRows: 3, maxRows: 6 }"
+            readonly
+          />
+          <div v-else class="preview-html" v-html="renderSafeTemplate(form.ticket_notify_template, previewParams)"></div>
         </NFormItem>
       </NModal>
     </n-spin>

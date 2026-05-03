@@ -221,7 +221,7 @@ class HttpAuditLogMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request: Request, call_next: RequestResponseEndpoint) -> Response:
         req_id = uuid.uuid4().hex[:8]
         request.state.req_id = req_id
-        logger.info("[http.request] start req_id={} method={} path={} query={}", req_id, request.method, request.url.path, str(request.query_params))
+        logger.info("[http.request] start req_id={} method={} path={}", req_id, request.method, request.url.path)
         start_time: datetime = datetime.now()
         await self.before_request(request)
         response = await call_next(request)

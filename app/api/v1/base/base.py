@@ -14,7 +14,7 @@ from app.core.dependency import DependAuth
 from app.models.admin import Api, AuditLog, Menu, PartnerRegistration, Role, Ticket, User
 from app.models.enums import PartnerRegisterStatus, TicketStatus
 from app.schemas.captcha import CaptchaOut
-from app.schemas.mail import SendVerifyCodeIn
+from app.schemas.mail import ResetPasswordByEmailIn, SendResetPasswordCodeIn, SendVerifyCodeIn
 from app.schemas.base import Fail, Success
 from app.schemas.login import *
 from app.schemas.users import UpdatePassword
@@ -151,6 +151,38 @@ async def send_email_code(payload: SendVerifyCodeIn):
     return Success(msg="验证码已发送，请查收邮箱")
 
 
+@router.post("/send_reset_password_code", summary="发送找回密码验证码")
+async def send_reset_password_code(payload: SendResetPasswordCodeIn):
+    email = payload.email.strip().lower()
+    valid = await captcha_controller.verify_captcha(payload.captcha_id, payload.captcha_code)
+    if not valid:
+        return Fail(code=400, msg=f"图形验证码错误或已失效，请重试（最多{settings.CAPTCHA_MAX_RETRY}次）")
+
+    user = await User.filter(email=email).first()
+    if not user:
+        return Fail(code=404, msg="该邮箱未注册")
+
+    await mail_controller.send_reset_password_code(email)
+    return Success(msg="验证码已发送，请查收邮箱")
+
+
+@router.post("/reset_password_by_email", summary="邮箱验证码重置密码")
+async def reset_password_by_email(payload: ResetPasswordByEmailIn):
+    email = payload.email.strip().lower()
+    user = await User.filter(email=email).first()
+    if not user:
+        return Fail(code=404, msg="该邮箱未注册")
+
+    valid = await mail_controller.verify_email_code(email, payload.email_code)
+    if not valid:
+        return Fail(code=400, msg="邮箱验证码错误或已失效")
+
+    await user_controller.validate_password_policy(payload.new_password)
+    user.password = get_password_hash(payload.new_password)
+    await user.save()
+    return Success(msg="密码重置成功")
+
+
 @router.get("/workbench_stats", summary="工作台统计", dependencies=[DependAuth])
 async def get_workbench_stats():
     now = datetime.now()
@@ -245,6 +277,7 @@ async def update_user_password(req_in: UpdatePassword):
     verified = verify_password(req_in.old_password, user.password)
     if not verified:
         return Fail(msg="旧密码验证错误！")
+    await user_controller.validate_password_policy(req_in.new_password)
     user.password = get_password_hash(req_in.new_password)
     await user.save()
     return Success(msg="修改成功")
