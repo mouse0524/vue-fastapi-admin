@@ -70,6 +70,11 @@ class SystemSettingUpdateIn(BaseModel):
     ai_kb_max_upload_size: int = 20 * 1024 * 1024
     ai_kb_feedback_window: int = 20
     ai_kb_auto_reindex_threshold: int = 5
+    ai_kb_openai_base_url: str | None = None
+    ai_kb_openai_api_key: str | None = None
+    ai_kb_openai_model: str | None = None
+    ai_kb_embedding_model: str | None = None
+    ai_kb_llm_timeout_seconds: int = 20
 
     @field_validator("ticket_attachment_extensions")
     @classmethod
@@ -164,6 +169,7 @@ class SystemSettingUpdateIn(BaseModel):
         "ai_kb_max_upload_size",
         "ai_kb_feedback_window",
         "ai_kb_auto_reindex_threshold",
+        "ai_kb_llm_timeout_seconds",
     )
     @classmethod
     def validate_positive_ai_kb_numbers(cls, value: int, info):

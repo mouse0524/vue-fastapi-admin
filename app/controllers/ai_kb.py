@@ -52,6 +52,11 @@ class AIKnowledgeController:
             "chunk_overlap": int(conf.get("ai_kb_chunk_overlap") or settings.AI_KB_CHUNK_OVERLAP),
             "feedback_window": int(conf.get("ai_kb_feedback_window") or 20),
             "auto_reindex_threshold": int(conf.get("ai_kb_auto_reindex_threshold") or 5),
+            "openai_base_url": str(conf.get("ai_kb_openai_base_url") or settings.LLM_BASE_URL),
+            "openai_api_key": str(conf.get("ai_kb_openai_api_key") or settings.LLM_API_KEY),
+            "openai_model": str(conf.get("ai_kb_openai_model") or settings.LLM_MODEL),
+            "embedding_model": str(conf.get("ai_kb_embedding_model") or os.getenv("AI_KB_EMBEDDING_MODEL", "text-embedding-3-small")),
+            "llm_timeout_seconds": int(conf.get("ai_kb_llm_timeout_seconds") or settings.LLM_TIMEOUT_SECONDS),
         }
 
     @staticmethod
@@ -109,16 +114,17 @@ class AIKnowledgeController:
         return dot / (math.sqrt(na) * math.sqrt(nb))
 
     async def _embed_text(self, text: str) -> list[float]:
-        base_url = str(settings.LLM_BASE_URL or "").rstrip("/")
-        api_key = str(settings.LLM_API_KEY or "").strip()
+        runtime = await self._runtime_conf()
+        base_url = str(runtime.get("openai_base_url") or "").rstrip("/")
+        api_key = str(runtime.get("openai_api_key") or "").strip()
         if not base_url or not api_key:
             return []
-        model = os.getenv("AI_KB_EMBEDDING_MODEL", "text-embedding-3-small")
+        model = str(runtime.get("embedding_model") or "text-embedding-3-small")
         payload = {"model": model, "input": text}
         headers = {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}
         url = f"{base_url}/embeddings"
         try:
-            async with httpx.AsyncClient(timeout=float(settings.LLM_TIMEOUT_SECONDS)) as client:
+            async with httpx.AsyncClient(timeout=float(runtime.get("llm_timeout_seconds") or settings.LLM_TIMEOUT_SECONDS)) as client:
                 resp = await client.post(url, headers=headers, json=payload)
             if resp.status_code >= 400:
                 logger.warning("[ai_kb.embed] request_failed status={}", resp.status_code)
@@ -277,8 +283,9 @@ class AIKnowledgeController:
         return result
 
     async def _call_openai_compatible(self, *, question: str, context: str) -> str:
-        base_url = str(settings.LLM_BASE_URL or "").rstrip("/")
-        api_key = str(settings.LLM_API_KEY or "").strip()
+        runtime = await self._runtime_conf()
+        base_url = str(runtime.get("openai_base_url") or "").rstrip("/")
+        api_key = str(runtime.get("openai_api_key") or "").strip()
         if not base_url or not api_key:
             return "AI知识库已接入，但未配置LLM_BASE_URL或LLM_API_KEY。"
 
@@ -305,7 +312,7 @@ class AIKnowledgeController:
         if len(user_prompt) > max_chars:
             user_prompt = user_prompt[:max_chars]
         payload = {
-            "model": settings.LLM_MODEL,
+            "model": str(runtime.get("openai_model") or settings.LLM_MODEL),
             "messages": [
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": user_prompt},
@@ -315,7 +322,7 @@ class AIKnowledgeController:
         headers = {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}
         url = f"{base_url}/chat/completions"
         try:
-            async with httpx.AsyncClient(timeout=float(settings.LLM_TIMEOUT_SECONDS)) as client:
+            async with httpx.AsyncClient(timeout=float(runtime.get("llm_timeout_seconds") or settings.LLM_TIMEOUT_SECONDS)) as client:
                 resp = await client.post(url, headers=headers, json=payload)
             if resp.status_code >= 400:
                 logger.warning("[ai_kb.llm] request_failed status={} body={}", resp.status_code, resp.text[:300])
@@ -330,8 +337,9 @@ class AIKnowledgeController:
             return "AI模型调用异常，请稍后重试。"
 
     async def _stream_openai_compatible(self, *, question: str, context: str):
-        base_url = str(settings.LLM_BASE_URL or "").rstrip("/")
-        api_key = str(settings.LLM_API_KEY or "").strip()
+        runtime = await self._runtime_conf()
+        base_url = str(runtime.get("openai_base_url") or "").rstrip("/")
+        api_key = str(runtime.get("openai_api_key") or "").strip()
         if not base_url or not api_key:
             yield "AI知识库已接入，但未配置LLM_BASE_URL或LLM_API_KEY。"
             return
@@ -355,7 +363,7 @@ class AIKnowledgeController:
             user_prompt = user_prompt[:max_chars]
 
         payload = {
-            "model": settings.LLM_MODEL,
+            "model": str(runtime.get("openai_model") or settings.LLM_MODEL),
             "messages": [
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": user_prompt},
@@ -366,7 +374,7 @@ class AIKnowledgeController:
         headers = {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}
         url = f"{base_url}/chat/completions"
         try:
-            async with httpx.AsyncClient(timeout=float(settings.LLM_TIMEOUT_SECONDS)) as client:
+            async with httpx.AsyncClient(timeout=float(runtime.get("llm_timeout_seconds") or settings.LLM_TIMEOUT_SECONDS)) as client:
                 async with client.stream("POST", url, headers=headers, json=payload) as resp:
                     if resp.status_code >= 400:
                         logger.warning("[ai_kb.llm.stream] request_failed status={}", resp.status_code)

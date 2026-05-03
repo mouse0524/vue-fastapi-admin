@@ -26,6 +26,11 @@ const aiConfig = ref({
   ai_kb_max_upload_size: 20 * 1024 * 1024,
   ai_kb_feedback_window: 20,
   ai_kb_auto_reindex_threshold: 5,
+  ai_kb_openai_base_url: '',
+  ai_kb_openai_api_key: '',
+  ai_kb_openai_model: 'gpt-4o-mini',
+  ai_kb_embedding_model: 'text-embedding-3-small',
+  ai_kb_llm_timeout_seconds: 20,
 })
 
 const statusData = ref({
@@ -38,6 +43,11 @@ const statusData = ref({
   skill_prompt_loaded: false,
   skill_prompt_dir: '',
 })
+
+function parseLastRebuildMs(line) {
+  const m = String(line || '').match(/took_ms=(\d+)/)
+  return m ? Number(m[1]) : 0
+}
 
 async function loadDocs() {
   docsLoading.value = true
@@ -135,7 +145,24 @@ loadRebuildHistory()
       <div style="color:#b45309;">当前页面为管理员专属操作区，建议仅管理员访问。</div>
     </NCard>
 
-    <NCard title="学习文档" size="small">
+    <NCard size="small" class="panel-card">
+      <div class="summary-grid">
+        <div class="summary-item">
+          <div class="summary-label">文档数</div>
+          <div class="summary-value">{{ statusData.doc_count }}</div>
+        </div>
+        <div class="summary-item">
+          <div class="summary-label">分片数</div>
+          <div class="summary-value">{{ statusData.chunk_count }}</div>
+        </div>
+        <div class="summary-item">
+          <div class="summary-label">最近重建耗时</div>
+          <div class="summary-value">{{ parseLastRebuildMs(statusData.last_rebuild) || 0 }} ms</div>
+        </div>
+      </div>
+    </NCard>
+
+    <NCard title="学习文档" size="small" class="panel-card">
       <NUpload :custom-request="handleUpload" :show-file-list="false">
         <NButton>上传文档（pdf/doc/docx/md/txt）</NButton>
       </NUpload>
@@ -144,7 +171,7 @@ loadRebuildHistory()
       <NButton style="margin-left:12px;" @click="reindexIncremental = !reindexIncremental">
         {{ reindexIncremental ? '当前：增量重建' : '当前：全量重建' }}
       </NButton>
-      <NList style="margin-top:12px;">
+      <NList class="doc-list">
         <NListItem v-for="item in docs" :key="item.name">
           <div style="display:flex; justify-content:space-between; gap:12px; width:100%; align-items:center;">
             <span>{{ item.name }} - {{ item.size }} bytes - {{ item.updated_at }}</span>
@@ -162,8 +189,13 @@ loadRebuildHistory()
       </NList>
     </NCard>
 
-    <NCard title="运行配置" size="small" style="margin-top:12px;">
-      <div style="display:grid; grid-template-columns: repeat(2, minmax(280px, 1fr)); gap:12px;">
+    <NCard title="运行配置" size="small" class="panel-card">
+      <div class="config-grid">
+        <div><div>OpenAI Base URL</div><input v-model="aiConfig.ai_kb_openai_base_url" class="plain-input" /></div>
+        <div><div>OpenAI API Key</div><input v-model="aiConfig.ai_kb_openai_api_key" type="password" class="plain-input" /></div>
+        <div><div>Chat Model</div><input v-model="aiConfig.ai_kb_openai_model" class="plain-input" /></div>
+        <div><div>Embedding Model</div><input v-model="aiConfig.ai_kb_embedding_model" class="plain-input" /></div>
+        <div><div>LLM超时(秒)</div><NInputNumber v-model:value="aiConfig.ai_kb_llm_timeout_seconds" :min="1" :max="120" /></div>
         <div><div>默认TopK</div><NInputNumber v-model:value="aiConfig.ai_kb_top_k" :min="1" :max="20" /></div>
         <div><div>切片长度</div><NInputNumber v-model:value="aiConfig.ai_kb_chunk_size" :min="100" :max="8000" /></div>
         <div><div>切片重叠</div><NInputNumber v-model:value="aiConfig.ai_kb_chunk_overlap" :min="1" :max="2000" /></div>
@@ -177,8 +209,8 @@ loadRebuildHistory()
       </div>
     </NCard>
 
-    <NCard title="运行状态" size="small" style="margin-top:12px;">
-      <div style="display:grid; grid-template-columns: repeat(2, minmax(280px, 1fr)); gap:12px;">
+    <NCard title="运行状态" size="small" class="panel-card">
+      <div class="status-grid">
         <div>文档数量：{{ statusData.doc_count }}</div>
         <div>索引分片：{{ statusData.chunk_count }}</div>
         <div>近期反馈数：{{ statusData.recent_feedback }}</div>
@@ -191,7 +223,7 @@ loadRebuildHistory()
       <div style="margin-top:12px;"><NButton :loading="statusLoading" @click="loadStatus">刷新状态</NButton></div>
     </NCard>
 
-    <NCard title="重建历史" size="small" style="margin-top:12px;">
+    <NCard title="重建历史" size="small" class="panel-card">
       <NButton :loading="historyLoading" @click="loadRebuildHistory">刷新历史</NButton>
       <NList style="margin-top:12px; max-height:260px; overflow:auto;">
         <NListItem v-for="(line, idx) in rebuildHistory" :key="idx">{{ line }}</NListItem>
@@ -199,3 +231,69 @@ loadRebuildHistory()
     </NCard>
   </CommonPage>
 </template>
+
+<style scoped>
+.panel-card {
+  margin-top: 12px;
+}
+
+.summary-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(160px, 1fr));
+  gap: 12px;
+}
+
+.summary-item {
+  border: 1px solid #dbeafe;
+  background: linear-gradient(180deg, #eff6ff, #f8fafc);
+  border-radius: 10px;
+  padding: 10px 12px;
+}
+
+.summary-label {
+  color: #64748b;
+  font-size: 12px;
+}
+
+.summary-value {
+  color: #0f172a;
+  font-weight: 700;
+  font-size: 18px;
+  margin-top: 2px;
+}
+
+.doc-list {
+  margin-top: 12px;
+  border: 1px solid #e5e7eb;
+  border-radius: 10px;
+  padding: 6px;
+  background: linear-gradient(180deg, #f8fafc, #ffffff);
+}
+
+.config-grid,
+.status-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(280px, 1fr));
+  gap: 12px;
+}
+
+.plain-input {
+  width: 100%;
+  height: 34px;
+  border: 1px solid #d9d9d9;
+  border-radius: 4px;
+  padding: 0 10px;
+  box-sizing: border-box;
+}
+
+@media (max-width: 900px) {
+  .summary-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .config-grid,
+  .status-grid {
+    grid-template-columns: 1fr;
+  }
+}
+</style>

@@ -111,6 +111,11 @@ class SystemSettingController:
             "ai_kb_max_upload_size": 20971520,
             "ai_kb_feedback_window": 20,
             "ai_kb_auto_reindex_threshold": 5,
+            "ai_kb_openai_base_url": None,
+            "ai_kb_openai_api_key": None,
+            "ai_kb_openai_model": None,
+            "ai_kb_embedding_model": None,
+            "ai_kb_llm_timeout_seconds": 20,
         },
     }
 
@@ -146,6 +151,7 @@ class SystemSettingController:
             data.update(section_data)
         data["smtp_password"] = self._mask_secret(data.get("smtp_password"))
         data["webdav_password"] = self._mask_secret(data.get("webdav_password"))
+        data["ai_kb_openai_api_key"] = self._mask_secret(data.get("ai_kb_openai_api_key"))
         return data
 
     async def get_public_config(self) -> dict:
@@ -250,6 +256,8 @@ class SystemSettingController:
             payload["smtp_password"] = sections["mail"].get("smtp_password")
         if payload.get("webdav_password") == "******":
             payload["webdav_password"] = sections["webdav"].get("webdav_password")
+        if payload.get("ai_kb_openai_api_key") == "******":
+            payload["ai_kb_openai_api_key"] = sections["ai_kb"].get("ai_kb_openai_api_key")
 
         site_keys = {"site_title", "site_logo", "allow_partner_register"}
         ticket_keys = {
@@ -319,6 +327,11 @@ class SystemSettingController:
             "ai_kb_max_upload_size",
             "ai_kb_feedback_window",
             "ai_kb_auto_reindex_threshold",
+            "ai_kb_openai_base_url",
+            "ai_kb_openai_api_key",
+            "ai_kb_openai_model",
+            "ai_kb_embedding_model",
+            "ai_kb_llm_timeout_seconds",
         }
 
         mapping = {

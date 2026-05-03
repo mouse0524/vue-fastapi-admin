@@ -127,6 +127,11 @@ async def ai_kb_get_config():
         "ai_kb_max_upload_size": int(data.get("ai_kb_max_upload_size") or settings.AI_KB_MAX_UPLOAD_SIZE),
         "ai_kb_feedback_window": int(data.get("ai_kb_feedback_window") or 20),
         "ai_kb_auto_reindex_threshold": int(data.get("ai_kb_auto_reindex_threshold") or 5),
+        "ai_kb_openai_base_url": data.get("ai_kb_openai_base_url") or settings.LLM_BASE_URL,
+        "ai_kb_openai_api_key": data.get("ai_kb_openai_api_key") or "",
+        "ai_kb_openai_model": data.get("ai_kb_openai_model") or settings.LLM_MODEL,
+        "ai_kb_embedding_model": data.get("ai_kb_embedding_model") or "text-embedding-3-small",
+        "ai_kb_llm_timeout_seconds": int(data.get("ai_kb_llm_timeout_seconds") or settings.LLM_TIMEOUT_SECONDS),
     }
     return Success(data=result)
 
