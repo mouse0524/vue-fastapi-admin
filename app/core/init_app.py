@@ -169,6 +169,17 @@ async def init_menus():
                 component="/system/settings",
                 keepalive=False,
             ),
+            Menu(
+                menu_type=MenuType.MENU,
+                name="全局通知",
+                path="notice",
+                order=8,
+                parent_id=parent_menu.id,
+                icon="material-symbols:notifications-active-outline-rounded",
+                is_hidden=False,
+                component="/system/notice",
+                keepalive=False,
+            ),
         ]
         await Menu.bulk_create(children_menu)
         await Menu.create(
@@ -282,6 +293,22 @@ async def init_menus():
                 icon="material-symbols:settings-outline",
                 is_hidden=False,
                 component="/system/settings",
+                keepalive=False,
+                redirect="",
+            )
+
+    if not await Menu.filter(component="/system/notice").exists():
+        system_parent = await Menu.filter(path="/system").first()
+        if system_parent:
+            await Menu.create(
+                menu_type=MenuType.MENU,
+                name="全局通知",
+                path="notice",
+                order=8,
+                parent_id=system_parent.id,
+                icon="material-symbols:notifications-active-outline-rounded",
+                is_hidden=False,
+                component="/system/notice",
                 keepalive=False,
                 redirect="",
             )
@@ -446,6 +473,24 @@ async def init_roles():
             "/api/v1/webdav/share/delete",
         ]
     )
+    notice_apis = await Api.filter(
+        path__in=[
+            "/api/v1/notice/create",
+            "/api/v1/notice/list",
+            "/api/v1/notice/inbox",
+            "/api/v1/notice/unread_count",
+            "/api/v1/notice/read",
+            "/api/v1/notice/read_all",
+        ]
+    )
+    notice_user_apis = await Api.filter(
+        path__in=[
+            "/api/v1/notice/inbox",
+            "/api/v1/notice/unread_count",
+            "/api/v1/notice/read",
+            "/api/v1/notice/read_all",
+        ]
+    )
     basic_apis = await Api.filter(
         Q(method__in=["GET"]) | Q(tags="基础模块") | Q(path__in=["/api/v1/base/update_password"])
     )
@@ -455,6 +500,7 @@ async def init_roles():
     review_menus = await Menu.filter(Q(path="/ticket") | Q(component="/ticket/review"))
     partner_review_menus = await Menu.filter(Q(path="/partner") | Q(component="/partner/review"))
     settings_menus = await Menu.filter(Q(component="/system/settings"))
+    notice_menus = await Menu.filter(Q(component="/system/notice"))
     webdav_menus = await Menu.filter(
         Q(path="/outbound") | Q(component="/system/webdav") | Q(component="/system/webdav-share")
     )
@@ -462,6 +508,7 @@ async def init_roles():
     for role_name in ["用户", "渠道商", "技术", "客服"]:
         role_obj = role_map[role_name]
         await role_obj.apis.add(*basic_apis)
+        await role_obj.apis.add(*notice_user_apis)
 
     await role_map["用户"].apis.add(*ticket_submit_apis)
     await role_map["用户"].menus.add(*submit_menus)
@@ -483,7 +530,9 @@ async def init_roles():
 
     await role_map["管理员"].apis.add(*settings_apis)
     await role_map["管理员"].apis.add(*webdav_apis)
+    await role_map["管理员"].apis.add(*notice_apis)
     await role_map["管理员"].menus.add(*settings_menus)
+    await role_map["管理员"].menus.add(*notice_menus)
     await role_map["管理员"].menus.add(*webdav_menus)
 
 

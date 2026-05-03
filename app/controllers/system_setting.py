@@ -2,17 +2,21 @@ import os
 import uuid
 from datetime import datetime
 from urllib.parse import quote
+import json
 
 import httpx
 from fastapi import HTTPException, UploadFile
 
 from app.log import logger
+from app.core.redis_client import execute_redis
 from app.models.admin import SystemSettingItem
 from app.settings import settings
 from app.utils.file_signature import detect_file_type, normalize_ext
 
 
 class SystemSettingController:
+    PUBLIC_CONFIG_CACHE_KEY = "config:public:v1"
+    PUBLIC_CONFIG_CACHE_TTL_SECONDS = 300
     _SECTIONS = {
         "site",
         "ticket",
@@ -133,13 +137,20 @@ class SystemSettingController:
         return data
 
     async def get_public_config(self) -> dict:
+        try:
+            cached = await execute_redis("get", self.PUBLIC_CONFIG_CACHE_KEY)
+            if cached:
+                return json.loads(cached)
+        except Exception:
+            pass
+
         sections = await self._ensure_all_sections()
         site = sections["site"]
         ticket = sections["ticket"]
         login_security = sections["login_security"]
         logo_url = "/api/v1/base/site_logo" if site.get("site_logo") else ""
         required_categories = login_security.get("password_required_categories") or ["letter", "digit"]
-        return {
+        result = {
             "site_title": site.get("site_title"),
             "site_logo": logo_url,
             "allow_partner_register": site.get("allow_partner_register", True),
@@ -159,6 +170,11 @@ class SystemSettingController:
             "password_required_categories": required_categories,
             "password_min_category_count": len(required_categories),
         }
+        try:
+            await execute_redis("setex", self.PUBLIC_CONFIG_CACHE_KEY, self.PUBLIC_CONFIG_CACHE_TTL_SECONDS, json.dumps(result, ensure_ascii=False))
+        except Exception:
+            pass
+        return result
 
     async def _get_merged_raw(self) -> dict:
         sections = await self._ensure_all_sections()
@@ -302,6 +318,11 @@ class SystemSettingController:
             item.data = merged
             await item.save()
 
+        try:
+            await execute_redis("delete", self.PUBLIC_CONFIG_CACHE_KEY)
+        except Exception:
+            pass
+
     async def get_logo_abs_path(self) -> str:
         site = (await self._ensure_all_sections())["site"]
         site_logo = site.get("site_logo")
@@ -351,6 +372,10 @@ class SystemSettingController:
         merged["site_logo"] = rel_path
         item.data = merged
         await item.save()
+        try:
+            await execute_redis("delete", self.PUBLIC_CONFIG_CACHE_KEY)
+        except Exception:
+            pass
         return rel_path
 
 

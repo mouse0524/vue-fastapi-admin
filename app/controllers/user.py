@@ -4,6 +4,7 @@ from typing import List, Optional
 from fastapi.exceptions import HTTPException
 
 from app.core.crud import CRUDBase
+from app.core.redis_client import execute_redis
 from app.log import logger
 from app.controllers.mail import mail_controller
 from app.models.admin import User
@@ -16,11 +17,41 @@ from .system_setting import system_setting_controller
 
 
 class UserController(CRUDBase[User, UserCreate, UserUpdate]):
+    USER_BASIC_CACHE_TTL_SECONDS = 600
     def __init__(self):
         super().__init__(model=User)
 
     async def get_by_email(self, email: str) -> Optional[User]:
         return await self.model.filter(email=email).first()
+
+    async def get_user_basic(self, user_id: int) -> dict:
+        cache_key = f"user:basic:{user_id}"
+        try:
+            cached = await execute_redis("get", cache_key)
+            if cached:
+                import json
+
+                return json.loads(cached)
+        except Exception:
+            pass
+
+        user_obj = await self.get(id=user_id)
+        roles = await user_obj.roles
+        data = {
+            "id": user_obj.id,
+            "username": user_obj.username,
+            "alias": user_obj.alias,
+            "email": user_obj.email,
+            "is_superuser": user_obj.is_superuser,
+            "role_names": [role.name for role in roles],
+        }
+        try:
+            import json
+
+            await execute_redis("setex", cache_key, self.USER_BASIC_CACHE_TTL_SECONDS, json.dumps(data, ensure_ascii=False))
+        except Exception:
+            pass
+        return data
 
     async def get_by_username(self, username: str) -> Optional[User]:
         return await self.model.filter(username=username).first()
@@ -73,6 +104,8 @@ class UserController(CRUDBase[User, UserCreate, UserUpdate]):
             role_obj = await role_controller.get(id=role_id)
             await user.roles.add(role_obj)
         logger.info("[user.role] update success user_id={} role_count={}", user.id, len(role_ids))
+        await self.clear_permission_cache(user.id)
+        await self.clear_admin_flag_cache(user.id)
 
     async def reset_password(self, user_id: int) -> str:
         logger.info("[user.reset_password] start user_id={}", user_id)
@@ -99,6 +132,28 @@ class UserController(CRUDBase[User, UserCreate, UserUpdate]):
         ok, message = is_password_strong(raw_password, min_length=min_length, min_categories=min_categories)
         if not ok:
             raise HTTPException(status_code=400, detail=message)
+
+    @staticmethod
+    async def clear_permission_cache(user_id: int) -> None:
+        keys = [f"perm:menu:user:{user_id}:v1", f"perm:api:user:{user_id}:v1"]
+        try:
+            await execute_redis("delete", *keys)
+        except Exception:
+            pass
+
+    @staticmethod
+    async def clear_admin_flag_cache(user_id: int) -> None:
+        try:
+            await execute_redis("delete", f"perm:is_admin:user:{user_id}:v1")
+        except Exception:
+            pass
+
+    @staticmethod
+    async def clear_user_basic_cache(user_id: int) -> None:
+        try:
+            await execute_redis("delete", f"user:basic:{user_id}")
+        except Exception:
+            pass
 
 
 user_controller = UserController()

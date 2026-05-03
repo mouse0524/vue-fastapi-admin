@@ -95,6 +95,13 @@ export default {
     return request.get('/partner/register/list', { params: query })
   },
   reviewPartnerRegister: (data = {}) => request.post('/partner/register/review', data),
+  // global notice
+  createNotice: (data = {}) => request.post('/notice/create', data),
+  getNoticeList: (params = {}) => request.get('/notice/list', { params }),
+  getNoticeInbox: (params = {}) => request.get('/notice/inbox', { params }),
+  getNoticeUnreadCount: () => request.get('/notice/unread_count'),
+  readNotice: (data = {}) => request.post('/notice/read', data),
+  readAllNotice: () => request.post('/notice/read_all'),
   // settings
   getSystemSettings: () => request.get('/settings/get'),
   updateSystemSettings: (data = {}) => request.post('/settings/update', data),

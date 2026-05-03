@@ -1,9 +1,11 @@
 from datetime import datetime, timedelta, timezone
+import json
 
 from fastapi import APIRouter, Request
 from fastapi.responses import FileResponse
 
 from app.log import logger
+from app.core.redis_client import execute_redis
 from app.controllers.login_security import login_security_controller
 from app.controllers.user import user_controller
 from app.controllers.captcha import captcha_controller
@@ -185,6 +187,20 @@ async def reset_password_by_email(payload: ResetPasswordByEmailIn):
 
 @router.get("/workbench_stats", summary="工作台统计", dependencies=[DependAuth])
 async def get_workbench_stats():
+    cache_key = "stats:workbench:global:v1"
+    try:
+        cached = await execute_redis("get", cache_key)
+        if cached:
+            return Success(data=json.loads(cached))
+    except json.JSONDecodeError as decode_exc:
+        logger.warning("[api.workbench_stats] cache_read_json_failed key={} error={}", cache_key, str(decode_exc))
+        try:
+            await execute_redis("delete", cache_key)
+        except Exception as clear_exc:
+            logger.warning("[api.workbench_stats] cache_clear_failed key={} error={}", cache_key, str(clear_exc))
+    except Exception as other_exc:
+        logger.warning("[api.workbench_stats] cache_read_failed key={} error={}", cache_key, str(other_exc))
+
     now = datetime.now()
     today_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
     tomorrow_start = today_start + timedelta(days=1)
@@ -202,18 +218,21 @@ async def get_workbench_stats():
     user_total = await User.all().count()
     auditlog_today = await AuditLog.filter(created_at__gte=today_start, created_at__lt=tomorrow_start).count()
 
-    return Success(
-        data={
-            "ticket_total": ticket_total,
-            "ticket_pending_review": ticket_pending_review,
-            "ticket_tech_processing": ticket_tech_processing,
-            "ticket_today_created": ticket_today_created,
-            "ticket_today_done": ticket_today_done,
-            "register_pending": register_pending,
-            "user_total": user_total,
-            "auditlog_today": auditlog_today,
-        }
-    )
+    data = {
+        "ticket_total": ticket_total,
+        "ticket_pending_review": ticket_pending_review,
+        "ticket_tech_processing": ticket_tech_processing,
+        "ticket_today_created": ticket_today_created,
+        "ticket_today_done": ticket_today_done,
+        "register_pending": register_pending,
+        "user_total": user_total,
+        "auditlog_today": auditlog_today,
+    }
+    try:
+        await execute_redis("setex", cache_key, 60, json.dumps(data, ensure_ascii=False))
+    except Exception as exc:
+        logger.warning("[api.workbench_stats] cache_write_failed key={} error={}", cache_key, str(exc))
+    return Success(data=data)
 
 
 @router.get("/userinfo", summary="查看用户信息", dependencies=[DependAuth])
@@ -228,6 +247,14 @@ async def get_userinfo():
 @router.get("/usermenu", summary="查看用户菜单", dependencies=[DependAuth])
 async def get_user_menu():
     user_id = CTX_USER_ID.get()
+    cache_key = f"perm:menu:user:{user_id}:v1"
+    try:
+        cached = await execute_redis("get", cache_key)
+        if cached:
+            return Success(data=json.loads(cached))
+    except Exception:
+        pass
+
     user_obj = await User.filter(id=user_id).first()
     menus: list[Menu] = []
     if user_obj.is_superuser:
@@ -250,16 +277,32 @@ async def get_user_menu():
             if menu.parent_id == parent_menu.id:
                 parent_menu_dict["children"].append(await menu.to_dict())
         res.append(parent_menu_dict)
+    try:
+        await execute_redis("setex", cache_key, 600, json.dumps(res, ensure_ascii=False))
+    except Exception:
+        pass
     return Success(data=res)
 
 
 @router.get("/userapi", summary="查看用户API", dependencies=[DependAuth])
 async def get_user_api():
     user_id = CTX_USER_ID.get()
+    cache_key = f"perm:api:user:{user_id}:v1"
+    try:
+        cached = await execute_redis("get", cache_key)
+        if cached:
+            return Success(data=json.loads(cached))
+    except Exception:
+        pass
+
     user_obj = await User.filter(id=user_id).first()
     if user_obj.is_superuser:
         api_objs: list[Api] = await Api.all()
         apis = [api.method.lower() + api.path for api in api_objs]
+        try:
+            await execute_redis("setex", cache_key, 600, json.dumps(apis, ensure_ascii=False))
+        except Exception:
+            pass
         return Success(data=apis)
     role_objs: list[Role] = await user_obj.roles
     apis = []
@@ -267,6 +310,10 @@ async def get_user_api():
         api_objs: list[Api] = await role_obj.apis
         apis.extend([api.method.lower() + api.path for api in api_objs])
     apis = list(set(apis))
+    try:
+        await execute_redis("setex", cache_key, 600, json.dumps(apis, ensure_ascii=False))
+    except Exception:
+        pass
     return Success(data=apis)
 
 

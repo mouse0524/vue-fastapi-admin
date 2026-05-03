@@ -13,6 +13,7 @@ import {
   NInput,
   NInputNumber,
   NModal,
+  NSelect,
   NSpace,
   NSwitch,
   NTabPane,
@@ -349,6 +350,7 @@ function renderSafeTemplate(template, params) {
 function openPreview() {
   previewVisible.value = true
 }
+
 
 function addDescriptionTemplate() {
   form.value.ticket_description_templates.push('')

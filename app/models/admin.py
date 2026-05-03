@@ -173,3 +173,28 @@ class WebDavShareLink(BaseModel, TimestampMixin):
 
     class Meta:
         table = "webdav_share_link"
+
+
+class GlobalNotice(BaseModel, TimestampMixin):
+    title = fields.CharField(max_length=100, null=True, description="通知标题")
+    content_html = fields.TextField(description="通知内容HTML")
+    target_type = fields.CharField(max_length=10, description="发送范围类型", index=True)
+    target_role_ids = fields.JSONField(default=list, description="目标角色ID列表")
+    target_user_ids = fields.JSONField(default=list, description="目标用户ID列表")
+    created_by = fields.BigIntField(description="创建人ID", index=True)
+    is_active = fields.BooleanField(default=True, description="是否生效", index=True)
+
+    class Meta:
+        table = "global_notice"
+
+
+class GlobalNoticeUser(BaseModel, TimestampMixin):
+    notice_id = fields.BigIntField(description="通知ID", index=True)
+    user_id = fields.BigIntField(description="接收用户ID", index=True)
+    is_read = fields.BooleanField(default=False, description="是否已读", index=True)
+    read_at = fields.DatetimeField(null=True, description="已读时间", index=True)
+    delivered_at = fields.DatetimeField(auto_now_add=True, description="投递时间", index=True)
+
+    class Meta:
+        table = "global_notice_user"
+        unique_together = ("notice_id", "user_id")

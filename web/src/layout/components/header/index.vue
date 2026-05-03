@@ -5,6 +5,7 @@
   </div>
   <div ml-auto flex items-center>
     <ThemeMode />
+    <NoticeBell />
     <FullScreen />
     <UserAvatar />
   </div>
@@ -16,4 +17,5 @@ import MenuCollapse from './components/MenuCollapse.vue'
 import FullScreen from './components/FullScreen.vue'
 import UserAvatar from './components/UserAvatar.vue'
 import ThemeMode from './components/ThemeMode.vue'
+import NoticeBell from './components/NoticeBell.vue'
 </script>

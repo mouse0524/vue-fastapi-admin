@@ -2,12 +2,14 @@ from tortoise.expressions import Q
 from tortoise.transactions import atomic
 
 from app.core.crud import CRUDBase
+from app.core.redis_client import execute_redis
 from app.log import logger
 from app.models.admin import Dept, DeptClosure
 from app.schemas.depts import DeptCreate, DeptUpdate
 
 
 class DeptController(CRUDBase[Dept, DeptCreate, DeptUpdate]):
+    DEPT_DICT_CACHE_KEY = "dict:depts:v1"
     def __init__(self):
         super().__init__(model=Dept)
 
@@ -37,6 +39,12 @@ class DeptController(CRUDBase[Dept, DeptCreate, DeptUpdate]):
         # 从顶级部门（parent_id=0）开始构建部门树
         dept_tree = build_tree(0)
         return dept_tree
+
+    async def clear_dept_dict_cache(self) -> None:
+        try:
+            await execute_redis("delete", self.DEPT_DICT_CACHE_KEY)
+        except Exception:
+            pass
 
     async def get_dept_info(self):
         pass
@@ -95,6 +103,7 @@ class DeptController(CRUDBase[Dept, DeptCreate, DeptUpdate]):
             new_obj.name,
             new_obj.parent_id,
         )
+        await self.clear_dept_dict_cache()
 
     @atomic()
     async def update_dept(self, obj_in: DeptUpdate):
@@ -104,6 +113,7 @@ class DeptController(CRUDBase[Dept, DeptCreate, DeptUpdate]):
             obj_in.name,
             obj_in.parent_id,
         )
+        await self.clear_dept_dict_cache()
         dept_obj = await self.get(id=obj_in.id)
         # 更新部门关系
         if dept_obj.parent_id != obj_in.parent_id:
@@ -128,6 +138,7 @@ class DeptController(CRUDBase[Dept, DeptCreate, DeptUpdate]):
         await obj.save()
         # 删除关系
         await DeptClosure.filter(descendant=dept_id).delete()
+        await self.clear_dept_dict_cache()
 
 
 dept_controller = DeptController()

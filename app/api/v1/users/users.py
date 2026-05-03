@@ -67,6 +67,9 @@ async def update_user(
 ):
     user = await user_controller.update(id=user_in.id, obj_in=user_in)
     await user_controller.update_roles(user, user_in.role_ids)
+    await user_controller.clear_permission_cache(user.id)
+    await user_controller.clear_admin_flag_cache(user.id)
+    await user_controller.clear_user_basic_cache(user.id)
     return Success(msg="Updated Successfully")
 
 
@@ -74,7 +77,10 @@ async def update_user(
 async def delete_user(
     user_id: int = Query(..., description="用户ID"),
 ):
+    await user_controller.clear_admin_flag_cache(user_id)
     await user_controller.remove(id=user_id)
+    await user_controller.clear_permission_cache(user_id)
+    await user_controller.clear_user_basic_cache(user_id)
     return Success(msg="Deleted Successfully")
 
 

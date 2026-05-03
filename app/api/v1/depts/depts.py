@@ -1,6 +1,8 @@
 from fastapi import APIRouter, Query
+import json
 
 from app.controllers.dept import dept_controller
+from app.core.redis_client import execute_redis
 from app.schemas import Success
 from app.schemas.depts import *
 
@@ -11,7 +13,20 @@ router = APIRouter()
 async def list_dept(
     name: str = Query(None, description="部门名称"),
 ):
+    if not name:
+        try:
+            cached = await execute_redis("get", dept_controller.DEPT_DICT_CACHE_KEY)
+            if cached:
+                return Success(data=json.loads(cached))
+        except Exception:
+            pass
+
     dept_tree = await dept_controller.get_dept_tree(name)
+    if not name:
+        try:
+            await execute_redis("setex", dept_controller.DEPT_DICT_CACHE_KEY, 600, json.dumps(dept_tree, ensure_ascii=False))
+        except Exception:
+            pass
     return Success(data=dept_tree)
 
 

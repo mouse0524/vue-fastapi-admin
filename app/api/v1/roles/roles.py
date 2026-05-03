@@ -1,10 +1,12 @@
 import logging
+import json
 
 from fastapi import APIRouter, Query
 from fastapi.exceptions import HTTPException
 from tortoise.expressions import Q
 
 from app.controllers import role_controller
+from app.core.redis_client import execute_redis
 from app.schemas.base import Success, SuccessExtra
 from app.schemas.roles import *
 
@@ -18,11 +20,26 @@ async def list_role(
     page_size: int = Query(10, description="每页数量"),
     role_name: str = Query("", description="角色名称，用于查询"),
 ):
+    if not role_name and page == 1 and page_size >= 9999:
+        try:
+            cached = await execute_redis("get", role_controller.ROLE_DICT_CACHE_KEY)
+            if cached:
+                data = json.loads(cached)
+                return SuccessExtra(data=data, total=len(data), page=page, page_size=page_size)
+        except Exception:
+            pass
+
     q = Q()
     if role_name:
         q = Q(name__contains=role_name)
     total, role_objs = await role_controller.list(page=page, page_size=page_size, search=q)
     data = [await obj.to_dict() for obj in role_objs]
+
+    if not role_name and page == 1 and page_size >= 9999:
+        try:
+            await execute_redis("setex", role_controller.ROLE_DICT_CACHE_KEY, 600, json.dumps(data, ensure_ascii=False))
+        except Exception:
+            pass
     return SuccessExtra(data=data, total=total, page=page, page_size=page_size)
 
 
@@ -42,12 +59,14 @@ async def create_role(role_in: RoleCreate):
             detail="The role with this rolename already exists in the system.",
         )
     await role_controller.create(obj_in=role_in)
+    await role_controller.clear_role_dict_cache()
     return Success(msg="Created Successfully")
 
 
 @router.post("/update", summary="更新角色")
 async def update_role(role_in: RoleUpdate):
     await role_controller.update(id=role_in.id, obj_in=role_in)
+    await role_controller.clear_role_dict_cache()
     return Success(msg="Updated Successfully")
 
 
@@ -56,6 +75,7 @@ async def delete_role(
     role_id: int = Query(..., description="角色ID"),
 ):
     await role_controller.remove(id=role_id)
+    await role_controller.clear_role_dict_cache()
     return Success(msg="Deleted Success")
 
 

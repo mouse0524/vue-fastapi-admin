@@ -12,6 +12,7 @@ from tortoise.expressions import Q
 from app.log import logger
 from app.controllers.mail import mail_controller
 from app.controllers.system_setting import system_setting_controller
+from app.controllers.user import user_controller
 from app.models.admin import Ticket, TicketActionLog, TicketAttachment, User
 from app.models.enums import TicketActionType, TicketStatus
 from app.settings import settings
@@ -252,8 +253,12 @@ class TicketController:
         }
         user_map: dict[int, str] = {}
         if user_ids:
-            user_rows = await User.filter(id__in=list(user_ids)).values("id", "username", "alias")
-            user_map = {item["id"]: (item.get("alias") or item.get("username") or "") for item in user_rows}
+            for uid in list(user_ids):
+                try:
+                    basic = await user_controller.get_user_basic(int(uid))
+                    user_map[int(uid)] = str(basic.get("alias") or basic.get("username") or "")
+                except Exception:
+                    user_map[int(uid)] = ""
 
         for row in rows:
             for field in ("created_at", "updated_at", "finished_at"):
@@ -569,8 +574,12 @@ class TicketController:
         }
         user_map: dict[int, str] = {}
         if user_ids:
-            user_rows = await User.filter(id__in=list(user_ids)).values("id", "username", "alias")
-            user_map = {item["id"]: (item.get("alias") or item.get("username") or "") for item in user_rows}
+            for uid in list(user_ids):
+                try:
+                    basic = await user_controller.get_user_basic(int(uid))
+                    user_map[int(uid)] = str(basic.get("alias") or basic.get("username") or "")
+                except Exception:
+                    user_map[int(uid)] = ""
 
         for item in action_data:
             item["operator_name"] = user_map.get(item.get("operator_id"), "")
