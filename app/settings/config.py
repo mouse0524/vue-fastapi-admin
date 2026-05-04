@@ -119,17 +119,5 @@ class Settings(BaseSettings):
     DATETIME_FORMAT: str = "%Y-%m-%d %H:%M:%S"
     KB_DEFAULT_TOP_K: int = 5
     KB_DEFAULT_MODEL: str = "mock-rag-v1"
-    LLM_PROVIDER: str = "openai"
-    LLM_BASE_URL: str = "https://api.openai.com/v1"
-    LLM_API_KEY: str = ""
-    LLM_MODEL: str = "gpt-4o-mini"
-    LLM_TIMEOUT_SECONDS: int = 20
-    AI_KB_ENABLED: bool = True
-    AI_KB_TOP_K: int = 5
-    AI_KB_CHUNK_SIZE: int = 800
-    AI_KB_CHUNK_OVERLAP: int = 120
-    AI_KB_MAX_UPLOAD_SIZE: int = 20 * 1024 * 1024
-    AI_KB_SKILL_MAX_CHARS: int = 12000
-
 
 settings = Settings()

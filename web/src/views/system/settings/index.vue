@@ -93,6 +93,22 @@ const form = ref({
   webdav_password: '',
   webdav_share_default_expire_hours: 168,
   webdav_signature_secret: '',
+  ai_kb_enabled: true,
+  ai_kb_top_k: 5,
+  ai_kb_chunk_size: 800,
+  ai_kb_chunk_overlap: 120,
+  ai_kb_max_upload_size: 20 * 1024 * 1024,
+  ai_kb_feedback_window: 20,
+  ai_kb_auto_reindex_threshold: 5,
+  ai_kb_openai_base_url: '',
+  ai_kb_openai_api_key: '',
+  ai_kb_chat_model: '',
+  ai_kb_openai_model: '',
+  ai_kb_embedding_model: '',
+  ai_kb_rerank_model: '',
+  ai_kb_document_analysis_model: '',
+  ai_kb_image_analysis_model: '',
+  ai_kb_llm_timeout_seconds: 20,
 })
 
 const previewParams = ref({
@@ -239,6 +255,9 @@ const rules = {
   login_ip_lock_minutes: { required: true, type: 'number', min: 1, message: '请输入正确的IP锁定时长', trigger: ['blur', 'change'] },
   login_fail_window_minutes: { required: true, type: 'number', min: 1, message: '请输入正确的失败统计窗口', trigger: ['blur', 'change'] },
   password_min_length: { required: true, type: 'number', min: 8, message: '密码最小长度不能小于8', trigger: ['blur', 'change'] },
+  ai_kb_openai_base_url: { required: true, message: '请输入 OpenAI 兼容 Base URL', trigger: ['input', 'blur'] },
+  ai_kb_chat_model: { required: true, message: '请输入智能对话模型', trigger: ['input', 'blur'] },
+  ai_kb_embedding_model: { required: true, message: '请输入向量模型', trigger: ['input', 'blur'] },
   password_required_categories: {
     required: true,
     validator: () => {
@@ -289,6 +308,7 @@ function save() {
       saving.value = true
       const payload = {
         ...form.value,
+        ai_kb_openai_base_url: normalizeModelEndpoint(form.value.ai_kb_openai_base_url),
         ticket_notify_by_role: normalizeTicketNotifyByRole(form.value.ticket_notify_by_role),
       }
       await api.updateSystemSettings(payload)
@@ -300,6 +320,19 @@ function save() {
       saving.value = false
     }
   })
+}
+
+function normalizeModelEndpoint(raw = '') {
+  const text = String(raw || '').trim().replace(/\/+$/, '')
+  if (!text) return ''
+  const suffixes = ['/chat/completions', '/embeddings', '/rerank']
+  const lower = text.toLowerCase()
+  for (const suffix of suffixes) {
+    if (lower.endsWith(suffix)) {
+      return text.slice(0, -suffix.length)
+    }
+  }
+  return text
 }
 
 async function testWebdavConnection() {
@@ -829,5 +862,21 @@ function applyPresetHtmlTemplates() {
   border: 1px solid #dcdfe6;
   border-radius: 6px;
   background: #fafafa;
+}
+
+.model-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(260px, 1fr));
+  gap: 4px 18px;
+}
+
+.mt-12 {
+  margin-top: 12px;
+}
+
+@media (max-width: 900px) {
+  .model-grid {
+    grid-template-columns: 1fr;
+  }
 }
 </style>

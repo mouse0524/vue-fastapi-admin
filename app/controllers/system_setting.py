@@ -25,7 +25,6 @@ class SystemSettingController:
         "mail",
         "mail_template",
         "webdav",
-        "ai_kb",
     }
 
     _DEFAULTS = {
@@ -103,20 +102,6 @@ class SystemSettingController:
             "webdav_max_upload_size": 52428800,
             "webdav_signature_secret": None,
         },
-        "ai_kb": {
-            "ai_kb_enabled": True,
-            "ai_kb_top_k": 5,
-            "ai_kb_chunk_size": 800,
-            "ai_kb_chunk_overlap": 120,
-            "ai_kb_max_upload_size": 20971520,
-            "ai_kb_feedback_window": 20,
-            "ai_kb_auto_reindex_threshold": 5,
-            "ai_kb_openai_base_url": None,
-            "ai_kb_openai_api_key": None,
-            "ai_kb_openai_model": None,
-            "ai_kb_embedding_model": None,
-            "ai_kb_llm_timeout_seconds": 20,
-        },
     }
 
     @staticmethod
@@ -151,7 +136,6 @@ class SystemSettingController:
             data.update(section_data)
         data["smtp_password"] = self._mask_secret(data.get("smtp_password"))
         data["webdav_password"] = self._mask_secret(data.get("webdav_password"))
-        data["ai_kb_openai_api_key"] = self._mask_secret(data.get("ai_kb_openai_api_key"))
         return data
 
     async def get_public_config(self) -> dict:
@@ -256,8 +240,6 @@ class SystemSettingController:
             payload["smtp_password"] = sections["mail"].get("smtp_password")
         if payload.get("webdav_password") == "******":
             payload["webdav_password"] = sections["webdav"].get("webdav_password")
-        if payload.get("ai_kb_openai_api_key") == "******":
-            payload["ai_kb_openai_api_key"] = sections["ai_kb"].get("ai_kb_openai_api_key")
 
         site_keys = {"site_title", "site_logo", "allow_partner_register"}
         ticket_keys = {
@@ -319,21 +301,6 @@ class SystemSettingController:
             "webdav_max_upload_size",
             "webdav_signature_secret",
         }
-        ai_kb_keys = {
-            "ai_kb_enabled",
-            "ai_kb_top_k",
-            "ai_kb_chunk_size",
-            "ai_kb_chunk_overlap",
-            "ai_kb_max_upload_size",
-            "ai_kb_feedback_window",
-            "ai_kb_auto_reindex_threshold",
-            "ai_kb_openai_base_url",
-            "ai_kb_openai_api_key",
-            "ai_kb_openai_model",
-            "ai_kb_embedding_model",
-            "ai_kb_llm_timeout_seconds",
-        }
-
         mapping = {
             "site": site_keys,
             "ticket": ticket_keys,
@@ -342,7 +309,6 @@ class SystemSettingController:
             "mail": mail_keys,
             "mail_template": mail_template_keys,
             "webdav": webdav_keys,
-            "ai_kb": ai_kb_keys,
         }
 
         for section, keys in mapping.items():

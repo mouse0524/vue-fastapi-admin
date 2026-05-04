@@ -313,88 +313,6 @@ async def init_menus():
                 redirect="",
             )
 
-    ai_kb_parent = await Menu.filter(path="/ai-kb").first()
-    if not ai_kb_parent:
-        ai_kb_parent = await Menu.create(
-            menu_type=MenuType.CATALOG,
-            name="AI知识库",
-            path="/ai-kb",
-            order=6,
-            parent_id=0,
-            icon="material-symbols:smart-toy-outline",
-            is_hidden=False,
-            component="Layout",
-            keepalive=False,
-            redirect="/ai-kb/knowledge",
-        )
-    else:
-        ai_kb_parent.menu_type = MenuType.CATALOG
-        ai_kb_parent.name = "AI知识库"
-        ai_kb_parent.order = 6
-        ai_kb_parent.parent_id = 0
-        ai_kb_parent.icon = "material-symbols:smart-toy-outline"
-        ai_kb_parent.is_hidden = False
-        ai_kb_parent.component = "Layout"
-        ai_kb_parent.keepalive = False
-        ai_kb_parent.redirect = "/ai-kb/knowledge"
-        await ai_kb_parent.save()
-
-    ai_kb_chat_menu = await Menu.filter(Q(component="/system/ai-kb") | Q(path="knowledge", parent_id=ai_kb_parent.id)).first()
-    if not ai_kb_chat_menu:
-        await Menu.create(
-            menu_type=MenuType.MENU,
-            name="知识问答",
-            path="knowledge",
-            order=1,
-            parent_id=ai_kb_parent.id,
-            icon="material-symbols:forum-outline",
-            is_hidden=False,
-            component="/system/ai-kb",
-            keepalive=False,
-            redirect="",
-        )
-    else:
-        ai_kb_chat_menu.menu_type = MenuType.MENU
-        ai_kb_chat_menu.name = "知识问答"
-        ai_kb_chat_menu.path = "knowledge"
-        ai_kb_chat_menu.order = 1
-        ai_kb_chat_menu.parent_id = ai_kb_parent.id
-        ai_kb_chat_menu.icon = "material-symbols:forum-outline"
-        ai_kb_chat_menu.is_hidden = False
-        ai_kb_chat_menu.component = "/system/ai-kb"
-        ai_kb_chat_menu.keepalive = False
-        ai_kb_chat_menu.redirect = ""
-        await ai_kb_chat_menu.save()
-
-    ai_kb_manage_menu = await Menu.filter(
-        Q(component="/system/ai-kb-manage") | Q(path="manage", parent_id=ai_kb_parent.id)
-    ).first()
-    if not ai_kb_manage_menu:
-        await Menu.create(
-            menu_type=MenuType.MENU,
-            name="知识管理",
-            path="manage",
-            order=2,
-            parent_id=ai_kb_parent.id,
-            icon="material-symbols:settings-outline",
-            is_hidden=False,
-            component="/system/ai-kb-manage",
-            keepalive=False,
-            redirect="",
-        )
-    else:
-        ai_kb_manage_menu.menu_type = MenuType.MENU
-        ai_kb_manage_menu.name = "知识管理"
-        ai_kb_manage_menu.path = "manage"
-        ai_kb_manage_menu.order = 2
-        ai_kb_manage_menu.parent_id = ai_kb_parent.id
-        ai_kb_manage_menu.icon = "material-symbols:settings-outline"
-        ai_kb_manage_menu.is_hidden = False
-        ai_kb_manage_menu.component = "/system/ai-kb-manage"
-        ai_kb_manage_menu.keepalive = False
-        ai_kb_manage_menu.redirect = ""
-        await ai_kb_manage_menu.save()
-
     outbound_parent = await Menu.filter(path="/outbound").first()
     if not outbound_parent:
         outbound_parent = await Menu.create(
@@ -555,28 +473,6 @@ async def init_roles():
             "/api/v1/webdav/share/delete",
         ]
     )
-    ai_kb_admin_apis = await Api.filter(
-        path__in=[
-            "/api/v1/ai-kb/chat",
-            "/api/v1/ai-kb/chat/stream",
-            "/api/v1/ai-kb/feedback",
-            "/api/v1/ai-kb/upload",
-            "/api/v1/ai-kb/docs",
-            "/api/v1/ai-kb/reindex",
-            "/api/v1/ai-kb/reindex_one",
-            "/api/v1/ai-kb/config",
-            "/api/v1/ai-kb/status",
-            "/api/v1/ai-kb/rebuild_history",
-        ]
-    )
-    ai_kb_user_apis = await Api.filter(
-        path__in=[
-            "/api/v1/ai-kb/chat",
-            "/api/v1/ai-kb/chat/stream",
-            "/api/v1/ai-kb/feedback",
-            "/api/v1/ai-kb/docs",
-        ]
-    )
     notice_apis = await Api.filter(
         path__in=[
             "/api/v1/notice/create",
@@ -608,15 +504,11 @@ async def init_roles():
     webdav_menus = await Menu.filter(
         Q(path="/outbound") | Q(component="/system/webdav") | Q(component="/system/webdav-share")
     )
-    ai_kb_chat_menus = await Menu.filter(Q(path="/ai-kb") | Q(component="/system/ai-kb"))
-    ai_kb_manage_menus = await Menu.filter(Q(path="/ai-kb") | Q(component="/system/ai-kb-manage"))
 
     for role_name in ["用户", "渠道商", "技术", "客服"]:
         role_obj = role_map[role_name]
         await role_obj.apis.add(*basic_apis)
         await role_obj.apis.add(*notice_user_apis)
-        await role_obj.apis.add(*ai_kb_user_apis)
-        await role_obj.menus.add(*ai_kb_chat_menus)
 
     await role_map["用户"].apis.add(*ticket_submit_apis)
     await role_map["用户"].menus.add(*submit_menus)
@@ -639,12 +531,9 @@ async def init_roles():
     await role_map["管理员"].apis.add(*settings_apis)
     await role_map["管理员"].apis.add(*webdav_apis)
     await role_map["管理员"].apis.add(*notice_apis)
-    await role_map["管理员"].apis.add(*ai_kb_admin_apis)
     await role_map["管理员"].menus.add(*settings_menus)
     await role_map["管理员"].menus.add(*notice_menus)
     await role_map["管理员"].menus.add(*webdav_menus)
-    await role_map["管理员"].menus.add(*ai_kb_chat_menus)
-    await role_map["管理员"].menus.add(*ai_kb_manage_menus)
 
 
 async def init_data():
