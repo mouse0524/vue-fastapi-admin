@@ -79,6 +79,7 @@ function eventTitle(type) {
   return {
     'user.message': '用户消息',
     'phase.changed': '阶段切换',
+    'support.match': '产品问题匹配',
     'search.results': '检索结果',
     'skill.activated': 'Skill 激活',
     'tools.registered': '工具注册',
@@ -118,6 +119,18 @@ function eventTitle(type) {
                 <b>{{ skill.name }}</b><span> score {{ skill.score || 0 }}</span>
               </div>
             </div>
+            <div v-else-if="item.type === 'support.match'" class="event-body">
+              <p class="match-summary">分类：{{ item.payload.classification?.issue_category || '-' }}，置信度：{{ item.payload.confidence || 0 }}</p>
+              <div v-for="skill in item.payload.items" :key="skill.id" class="skill-hit">
+                <b>{{ skill.name }}</b><span> score {{ skill.score || 0 }}</span>
+                <div v-if="skill.matched_reasons?.length" class="match-reasons">{{ skill.matched_reasons.join(' / ') }}</div>
+                <div v-for="level in skill.solution_levels" :key="`${skill.id}-${level.level}`" class="solution-level">
+                  <b>L{{ level.level }} {{ level.title }}</b>
+                  <p>{{ (level.steps || []).join('；') }}</p>
+                </div>
+              </div>
+              <div v-if="item.payload.clarifying_questions?.length" class="clarify-box">建议补充：{{ item.payload.clarifying_questions.join('；') }}</div>
+            </div>
             <div v-else-if="item.type === 'assistant.message'" class="answer-body">{{ item.payload.content }}</div>
             <pre v-else>{{ JSON.stringify(item.payload, null, 2) }}</pre>
             </template>
@@ -150,5 +163,8 @@ pre { margin: 8px 0 0; white-space: pre-wrap; font-size: 12px; }
 .answer-body { white-space: pre-wrap; line-height: 1.7; margin-top: 8px; }
 .skill-hit { padding: 8px 0; border-bottom: 1px dashed rgba(148, 163, 184, .3); }
 .skill-hit span { color: #7b8494; margin-left: 8px; }
+.match-summary, .match-reasons, .solution-level p, .clarify-box { color: #64748b; margin: 6px 0; }
+.solution-level { margin-top: 8px; padding: 8px; border-radius: 10px; background: rgba(255,255,255,.55); }
+.clarify-box { padding: 8px; border-radius: 10px; background: rgba(245, 158, 11, .10); }
 .input-bar { display: grid; grid-template-columns: 1fr 110px; gap: 12px; margin-top: 16px; }
 </style>

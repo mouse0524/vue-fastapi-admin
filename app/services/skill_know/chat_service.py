@@ -14,6 +14,7 @@ from app.services.skill_know.openai_client import skill_know_openai_client
 from app.services.skill_know.prompt_service import skill_know_prompt_service
 from app.services.skill_know.retriever import skill_know_retriever
 from app.services.skill_know.session_compressor import skill_know_session_compressor
+from app.services.skill_know.support_matcher import skill_know_support_matcher
 from app.services.skill_know.utils import new_uuid
 
 
@@ -75,6 +76,25 @@ class SkillKnowChatService:
         timeline.append(phase)
         yield phase
 
+        support_match = await skill_know_support_matcher.match(message, limit=5)
+        support_event = event("support.match", {
+            "classification": support_match["classification"],
+            "confidence": support_match["confidence"],
+            "clarifying_questions": support_match["clarifying_questions"],
+            "items": [
+                {
+                    "id": item["id"],
+                    "name": item["name"],
+                    "score": item["score"],
+                    "matched_reasons": item.get("matched_reasons") or [],
+                    "solution_levels": item.get("solution_levels") or [],
+                }
+                for item in support_match["matches"][:3]
+            ],
+        })
+        timeline.append(support_event)
+        yield support_event
+
         skills = await skill_know_retriever.retrieve(message, limit=6)
         search_event = event("search.results", {"query": message, "items": skills, "total": len(skills)})
         timeline.append(search_event)
@@ -93,8 +113,10 @@ class SkillKnowChatService:
             f"### {skill['name']}\n摘要：{skill.get('abstract') or skill.get('description')}\n内容：{skill.get('overview') or skill.get('content', '')[:1200]}"
             for skill in skills[:5]
         )
+        support_context = json.dumps(support_event["payload"], ensure_ascii=False)
         messages = [
             {"role": "system", "content": await self._system_prompt()},
+            {"role": "system", "content": f"产品问题匹配结果：\n{support_context}"},
             {"role": "system", "content": f"已检索到的知识上下文：\n{context}" if context else "当前没有检索到相关 Skill。"},
             {"role": "user", "content": message},
         ]

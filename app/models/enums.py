@@ -60,6 +60,13 @@ class SkillKnowSkillCategory(StrEnum):
     RETRIEVAL = "retrieval"
     TOOL = "tool"
     WORKFLOW = "workflow"
+    FAQ = "faq"
+    TROUBLESHOOTING = "troubleshooting"
+    FEATURE_CONSULTING = "feature_consulting"
+    CONFIGURATION = "configuration"
+    INTEGRATION = "integration"
+    KNOWN_ISSUE = "known_issue"
+    UPGRADE_GUIDE = "upgrade_guide"
 
 
 class SkillKnowDocumentStatus(StrEnum):

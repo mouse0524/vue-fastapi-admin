@@ -13,10 +13,18 @@ from app.services.skill_know.utils import make_uri, new_uuid, skill_to_dict
 
 
 class SkillKnowSkillService:
+    def _merge_support_config(self, data) -> dict:
+        config = dict(data.config or {})
+        support = getattr(data, "support", None)
+        if support is not None:
+            config["support"] = support.model_dump(exclude_none=True)
+        return config
+
     async def create(self, data, *, skill_type: SkillKnowSkillType = SkillKnowSkillType.USER, source_document_id: int | None = None) -> dict:
         analysis = await skill_know_content_analyzer.analyze(data.name, data.content, use_llm=False)
         abstract = data.abstract or analysis["abstract"]
         overview = data.overview or analysis["overview"]
+        config = self._merge_support_config(data)
         skill = await SkillKnowSkill.create(
             uuid=new_uuid(),
             uri=make_uri("skills", data.name),
@@ -32,7 +40,7 @@ class SkillKnowSkillService:
             always_apply=data.always_apply,
             folder_id=data.folder_id,
             priority=data.priority,
-            config=data.config,
+            config=config,
             source_document_id=source_document_id,
         )
         await self.index(skill)
@@ -86,6 +94,10 @@ class SkillKnowSkillService:
         ]:
             if field in data.model_fields_set:
                 setattr(skill, field, getattr(data, field))
+        if "support" in data.model_fields_set and data.support is not None:
+            config = dict(skill.config or {})
+            config["support"] = data.support.model_dump(exclude_none=True)
+            skill.config = config
         await skill.save()
         await self.index(skill)
         return await skill_to_dict(skill)

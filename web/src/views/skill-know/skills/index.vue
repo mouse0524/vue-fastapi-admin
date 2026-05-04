@@ -104,7 +104,20 @@ async function deleteSkill() {
 }
 
 const typeLabels = { system: '系统', document: '文档', user: '用户' }
-const categoryLabels = { search: '搜索', prompt: '提示词', retrieval: '检索', tool: '工具', workflow: '工作流' }
+const categoryLabels = {
+  search: '搜索',
+  prompt: '提示词',
+  retrieval: '检索',
+  tool: '工具',
+  workflow: '工作流',
+  faq: '常见问题',
+  troubleshooting: '故障排查',
+  feature_consulting: '功能咨询',
+  configuration: '配置问题',
+  integration: '集成问题',
+  known_issue: '已知问题',
+  upgrade_guide: '升级迁移',
+}
 </script>
 
 <template>
@@ -166,7 +179,7 @@ const categoryLabels = { search: '搜索', prompt: '提示词', retrieval: '检�
           </NSpace>
           <NGrid :cols="4" :x-gap="12" class="metric-grid">
             <NGi><NCard size="small"><div class="metric-label">类型</div><b>{{ typeLabels[selected.type] }}</b></NCard></NGi>
-            <NGi><NCard size="small"><div class="metric-label">分类</div><b>{{ categoryLabels[selected.category] }}</b></NCard></NGi>
+            <NGi><NCard size="small"><div class="metric-label">分类</div><b>{{ categoryLabels[selected.category] || selected.category }}</b></NCard></NGi>
             <NGi><NCard size="small"><div class="metric-label">优先级</div><b>{{ selected.priority }}</b></NCard></NGi>
             <NGi><NCard size="small"><div class="metric-label">状态</div><b>{{ selected.is_active ? '启用' : '禁用' }}</b></NCard></NGi>
           </NGrid>

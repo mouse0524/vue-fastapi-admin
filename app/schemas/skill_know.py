@@ -27,6 +27,25 @@ class SkillKnowFolderUpdate(BaseModel):
     sort_order: int | None = None
 
 
+class SkillKnowSupportSolutionLevel(BaseModel):
+    level: int = Field(..., ge=1, le=3)
+    title: str
+    steps: list[str] = Field(default_factory=list)
+
+
+class SkillKnowSupportProfile(BaseModel):
+    product_type: str | None = None
+    product_module: str | None = None
+    issue_category: str | None = None
+    symptoms: list[str] = Field(default_factory=list)
+    root_causes: list[str] = Field(default_factory=list)
+    affected_versions: list[str] = Field(default_factory=list)
+    severity: str | None = None
+    solution_levels: list[SkillKnowSupportSolutionLevel] = Field(default_factory=list)
+    quality_score: float = Field(default=0.0, ge=0.0, le=1.0)
+    match_policy: dict[str, Any] = Field(default_factory=dict)
+
+
 class SkillKnowSkillIn(BaseModel):
     name: str = Field(..., min_length=1, max_length=100)
     description: str = Field(..., min_length=1)
@@ -40,6 +59,7 @@ class SkillKnowSkillIn(BaseModel):
     folder_id: int | None = None
     priority: int = 100
     config: dict[str, Any] = Field(default_factory=dict)
+    support: SkillKnowSupportProfile | None = None
 
 
 class SkillKnowSkillUpdate(BaseModel):
@@ -57,6 +77,7 @@ class SkillKnowSkillUpdate(BaseModel):
     priority: int | None = None
     is_active: bool | None = None
     config: dict[str, Any] | None = None
+    support: SkillKnowSupportProfile | None = None
 
 
 class SkillKnowMoveIn(BaseModel):
@@ -69,6 +90,18 @@ class SkillKnowSearchIn(BaseModel):
     category: SkillKnowSkillCategory | None = None
     type: SkillKnowSkillType | None = None
     limit: int = Field(default=20, ge=1, le=100)
+
+
+class SkillKnowSupportMatchIn(BaseModel):
+    query: str = Field(..., min_length=1)
+    product_type: str | None = None
+    product_module: str | None = None
+    issue_category: str | None = None
+    limit: int = Field(default=5, ge=1, le=20)
+
+
+class SkillKnowSupportEvaluateSkillIn(BaseModel):
+    skill_id: int
 
 
 class SkillKnowDocumentUpdate(BaseModel):

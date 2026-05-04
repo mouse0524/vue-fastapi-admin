@@ -120,15 +120,23 @@ class SkillKnowDocumentService:
         if not document.content:
             raise HTTPException(status_code=400, detail="文档内容为空，无法转换")
         analysis = await skill_know_content_analyzer.analyze(document.title, document.content, use_llm=use_llm)
+        support_analysis = skill_know_content_analyzer.analyze_support_by_rule(document.title, document.content)
         payload = SkillKnowSkillIn(
             name=document.title,
             description=document.description or analysis["abstract"],
-            category=SkillKnowSkillCategory.RETRIEVAL,
+            category=SkillKnowSkillCategory(support_analysis["issue_category"]),
             abstract=analysis["abstract"],
             overview=analysis["overview"],
             content=document.content,
             trigger_keywords=analysis.get("keywords") or analysis.get("tags") or [],
+            trigger_intents=[support_analysis["issue_category"]],
             folder_id=folder_id if folder_id is not None else document.folder_id,
+            config={"support": {
+                "issue_category": support_analysis["issue_category"],
+                "symptoms": analysis.get("keywords") or [],
+                "solution_levels": support_analysis["solution_levels"],
+                "quality_score": support_analysis["quality_score"],
+            }},
         )
         skill_data = await skill_know_skill_service.create(payload, skill_type=SkillKnowSkillType.DOCUMENT, source_document_id=document.id)
         skill = await SkillKnowSkill.get(id=skill_data["id"])

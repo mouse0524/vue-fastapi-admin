@@ -10,6 +10,7 @@ from .prompts import router as prompts_router
 from .quick_setup import router as quick_setup_router
 from .search import router as search_router
 from .skills import router as skills_router
+from .support import router as support_router
 from .upload import router as upload_router
 
 skill_know_router = APIRouter()
@@ -17,6 +18,7 @@ skill_know_router.include_router(folders_router, prefix="/folders", tags=["Skill
 skill_know_router.include_router(skills_router, prefix="/skills", tags=["Skill-Know 技能"])
 skill_know_router.include_router(documents_router, prefix="/documents", tags=["Skill-Know 文档"])
 skill_know_router.include_router(search_router, prefix="/search", tags=["Skill-Know 搜索"])
+skill_know_router.include_router(support_router, prefix="/support", tags=["Skill-Know 产品支持"])
 skill_know_router.include_router(graph_router, prefix="/graph", tags=["Skill-Know 知识图谱"])
 skill_know_router.include_router(chat_router, prefix="/chat", tags=["Skill-Know 对话"])
 skill_know_router.include_router(prompts_router, prefix="/prompts", tags=["Skill-Know 提示词"])
