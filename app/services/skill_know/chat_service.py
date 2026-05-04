@@ -4,6 +4,9 @@ import json
 import time
 from collections.abc import AsyncGenerator
 
+import httpx
+
+from app.log import logger
 from app.models.admin import SkillKnowConversation, SkillKnowMessage, SkillKnowPrompt
 from app.models.enums import SkillKnowMessageRole
 from app.services.skill_know.knowledge_extractor import skill_know_knowledge_extractor
@@ -16,6 +19,24 @@ from app.services.skill_know.utils import new_uuid
 
 def event(event_type: str, payload: dict | None = None) -> dict:
     return {"type": event_type, "payload": payload or {}, "ts": int(time.time() * 1000)}
+
+
+def _status_hint(status_code: int | str) -> str:
+    try:
+        code = int(status_code)
+    except Exception:
+        return "请检查网络与模型服务状态。"
+    if code == 401:
+        return "认证失败：请检查 API Key 是否正确且仍有效。"
+    if code == 403:
+        return "权限不足：请检查 Key 权限、模型访问范围或账号策略。"
+    if code == 404:
+        return "资源不存在：请检查 Base URL 与模型名是否正确。"
+    if code == 429:
+        return "请求过多：请稍后重试，或检查配额/速率限制。"
+    if 500 <= code < 600:
+        return "模型服务端异常：请稍后重试。"
+    return "请检查请求参数、模型配置与网络连通性。"
 
 
 class SkillKnowChatService:
@@ -94,11 +115,43 @@ class SkillKnowChatService:
             done = event("llm.call.completed", {"length": len(answer)})
             timeline.append(done)
             yield done
-        except Exception as exc:
+        except httpx.ConnectError as exc:
+            logger.warning("[skill_know.chat.stream] network connect error conv_id={} error={}", conv.id, str(exc))
             if not answer:
-                answer = "模型暂不可用。请先在快速设置中检查 OpenAI 配置，或稍后重试。"
+                answer = "网络连接失败，请检查网络设置"
                 yield event("assistant.delta", {"content": answer})
-            err = event("error", {"message": str(exc)})
+            err = event("error", {"message": "网络连接失败，请检查网络设置"})
+            timeline.append(err)
+            yield err
+        except httpx.HTTPStatusError as exc:
+            status_code = exc.response.status_code if exc.response else "unknown"
+            hint = _status_hint(status_code)
+            logger.warning(
+                "[skill_know.chat.stream] provider http status error conv_id={} status={} error={}",
+                conv.id,
+                status_code,
+                str(exc),
+            )
+            if not answer:
+                answer = f"API错误: {status_code}。{hint}"
+                yield event("assistant.delta", {"content": answer})
+            err = event("error", {"message": f"API错误: {status_code}", "hint": hint, "status_code": status_code})
+            timeline.append(err)
+            yield err
+        except httpx.ReadTimeout as exc:
+            logger.warning("[skill_know.chat.stream] provider read timeout conv_id={} error={}", conv.id, str(exc))
+            if not answer:
+                answer = "响应超时，请稍后重试"
+                yield event("assistant.delta", {"content": answer})
+            err = event("error", {"message": "响应超时，请稍后重试"})
+            timeline.append(err)
+            yield err
+        except Exception as exc:
+            logger.exception("[skill_know.chat.stream] unexpected error conv_id={} error={}", conv.id, str(exc))
+            if not answer:
+                answer = "服务暂时不可用，请稍后重试"
+                yield event("assistant.delta", {"content": answer})
+            err = event("error", {"message": "服务暂时不可用，请稍后重试"})
             timeline.append(err)
             yield err
 
