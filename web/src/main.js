@@ -2,6 +2,7 @@
 import '@/styles/reset.css'
 import 'uno.css'
 import '@/styles/global.scss'
+import '@/styles/skill-know.scss'
 
 import { createApp } from 'vue'
 import { setupRouter } from '@/router'

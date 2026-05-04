@@ -1,0 +1,56 @@
+from app.log import logger
+from app.services.skill_know.config_service import skill_know_config_service
+from app.services.skill_know.openai_client import skill_know_openai_client
+
+
+class SkillKnowQuickSetupService:
+    async def state(self) -> dict:
+        config = await skill_know_config_service.llm_config(masked=True)
+        configured = await skill_know_config_service.is_configured()
+        return {
+            "configured": configured,
+            "llm": config,
+            "checklist": await self.checklist(),
+        }
+
+    async def checklist(self) -> list[dict]:
+        configured = await skill_know_config_service.is_configured()
+        return [
+            {"key": "api_key", "label": "OpenAI API Key", "done": configured},
+            {"key": "chat_model", "label": "Chat Model", "done": bool(await skill_know_config_service.get("llm_chat_model"))},
+            {"key": "embedding_model", "label": "Embedding Model", "done": bool(await skill_know_config_service.get("llm_embedding_model"))},
+            {"key": "vector_store", "label": "ChromaDB 向量库", "done": True},
+        ]
+
+    async def complete(self, data) -> dict:
+        key_preview = str(data.llm_api_key or "")
+        if len(key_preview) > 8:
+            key_preview = key_preview[:4] + "****" + key_preview[-4:]
+        else:
+            key_preview = "(empty)"
+        logger.info(
+            "[skill_know.quick_setup.complete] api_key_type={} api_key_preview={} base_url={} chat_model={} embedding_model={}",
+            type(data.llm_api_key).__name__,
+            key_preview,
+            data.llm_base_url,
+            data.llm_chat_model,
+            data.llm_embedding_model,
+        )
+        # 空 key 不覆盖已有 key，防止“保存其他项时把 key 清空”
+        if isinstance(data.llm_api_key, str) and data.llm_api_key.strip():
+            await skill_know_config_service.set("llm_api_key", data.llm_api_key.strip(), description="OpenAI API Key")
+        await skill_know_config_service.set("llm_base_url", data.llm_base_url, description="OpenAI Base URL")
+        await skill_know_config_service.set("llm_chat_model", data.llm_chat_model, description="OpenAI Chat Model")
+        await skill_know_config_service.set("llm_embedding_model", data.llm_embedding_model, description="OpenAI Embedding Model")
+        return await self.state()
+
+    async def test_connection(self, data) -> dict:
+        return await skill_know_openai_client.test_connection(data.model_dump())
+
+    async def reset(self) -> dict:
+        for key in ["llm_api_key", "llm_base_url", "llm_chat_model", "llm_embedding_model"]:
+            await skill_know_config_service.set(key, None)
+        return await self.state()
+
+
+skill_know_quick_setup_service = SkillKnowQuickSetupService()

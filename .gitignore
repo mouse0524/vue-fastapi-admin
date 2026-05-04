@@ -8,6 +8,7 @@ venv/
 migrations/
 storage/
 panda*/
+Skill-Know-main
 
 
 db.sqlite3

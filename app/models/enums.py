@@ -46,3 +46,38 @@ class PartnerRegisterStatus(StrEnum):
 class RegisterType(StrEnum):
     CHANNEL = "channel"
     USER = "user"
+
+
+class SkillKnowSkillType(StrEnum):
+    SYSTEM = "system"
+    DOCUMENT = "document"
+    USER = "user"
+
+
+class SkillKnowSkillCategory(StrEnum):
+    SEARCH = "search"
+    PROMPT = "prompt"
+    RETRIEVAL = "retrieval"
+    TOOL = "tool"
+    WORKFLOW = "workflow"
+
+
+class SkillKnowDocumentStatus(StrEnum):
+    PENDING = "pending"
+    PROCESSING = "processing"
+    COMPLETED = "completed"
+    FAILED = "failed"
+
+
+class SkillKnowPromptCategory(StrEnum):
+    SYSTEM = "system"
+    CHAT = "chat"
+    SKILL = "skill"
+    CLASSIFICATION = "classification"
+    SEARCH = "search"
+
+
+class SkillKnowMessageRole(StrEnum):
+    USER = "user"
+    ASSISTANT = "assistant"
+    SYSTEM = "system"

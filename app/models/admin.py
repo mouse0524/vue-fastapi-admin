@@ -3,7 +3,18 @@ from tortoise import fields
 from app.schemas.menus import MenuType
 
 from .base import BaseModel, TimestampMixin
-from .enums import MethodType, PartnerRegisterStatus, RegisterType, TicketActionType, TicketStatus
+from .enums import (
+    MethodType,
+    PartnerRegisterStatus,
+    RegisterType,
+    SkillKnowDocumentStatus,
+    SkillKnowMessageRole,
+    SkillKnowPromptCategory,
+    SkillKnowSkillCategory,
+    SkillKnowSkillType,
+    TicketActionType,
+    TicketStatus,
+)
 
 
 class User(BaseModel, TimestampMixin):
@@ -198,3 +209,162 @@ class GlobalNoticeUser(BaseModel, TimestampMixin):
     class Meta:
         table = "global_notice_user"
         unique_together = ("notice_id", "user_id")
+
+
+class SkillKnowFolder(BaseModel, TimestampMixin):
+    uuid = fields.CharField(max_length=36, unique=True, description="文件夹UUID", index=True)
+    name = fields.CharField(max_length=100, description="文件夹名称", index=True)
+    description = fields.TextField(null=True, description="文件夹描述")
+    parent_id = fields.BigIntField(null=True, description="父文件夹ID", index=True)
+    sort_order = fields.IntField(default=0, description="排序", index=True)
+    is_system = fields.BooleanField(default=False, description="是否系统文件夹", index=True)
+
+    class Meta:
+        table = "sk_folder"
+
+
+class SkillKnowSkill(BaseModel, TimestampMixin):
+    uuid = fields.CharField(max_length=36, unique=True, description="技能UUID", index=True)
+    uri = fields.CharField(max_length=500, null=True, unique=True, description="Skill URI", index=True)
+    name = fields.CharField(max_length=100, description="技能名称", index=True)
+    description = fields.TextField(description="技能描述")
+    type = fields.CharEnumField(SkillKnowSkillType, default=SkillKnowSkillType.USER, description="技能类型", index=True)
+    category = fields.CharEnumField(
+        SkillKnowSkillCategory,
+        default=SkillKnowSkillCategory.PROMPT,
+        description="技能分类",
+        index=True,
+    )
+    abstract = fields.TextField(null=True, description="L0摘要")
+    overview = fields.TextField(null=True, description="L1概览")
+    content = fields.TextField(description="L2完整内容")
+    trigger_keywords = fields.JSONField(default=list, description="触发关键词")
+    trigger_intents = fields.JSONField(default=list, description="触发意图")
+    always_apply = fields.BooleanField(default=False, description="是否总是应用", index=True)
+    version = fields.CharField(max_length=20, default="1.0.0", description="版本")
+    author = fields.CharField(max_length=100, null=True, description="作者")
+    is_active = fields.BooleanField(default=True, description="是否启用", index=True)
+    source_document_id = fields.BigIntField(null=True, description="来源文档ID", index=True)
+    folder_id = fields.BigIntField(null=True, description="所属文件夹ID", index=True)
+    priority = fields.IntField(default=100, description="优先级", index=True)
+    config = fields.JSONField(default=dict, description="扩展配置")
+
+    class Meta:
+        table = "sk_skill"
+
+
+class SkillKnowDocument(BaseModel, TimestampMixin):
+    uuid = fields.CharField(max_length=36, unique=True, description="文档UUID", index=True)
+    uri = fields.CharField(max_length=500, null=True, unique=True, description="Document URI", index=True)
+    title = fields.CharField(max_length=200, description="文档标题", index=True)
+    description = fields.TextField(null=True, description="文档描述")
+    filename = fields.CharField(max_length=255, description="文件名")
+    file_path = fields.CharField(max_length=500, description="文件路径")
+    file_size = fields.BigIntField(default=0, description="文件大小")
+    file_type = fields.CharField(max_length=50, description="文件类型", index=True)
+    abstract = fields.TextField(null=True, description="L0摘要")
+    overview = fields.TextField(null=True, description="L1概览")
+    content = fields.TextField(null=True, description="L2完整内容")
+    content_hash = fields.CharField(max_length=64, null=True, description="内容哈希", index=True)
+    status = fields.CharEnumField(
+        SkillKnowDocumentStatus,
+        default=SkillKnowDocumentStatus.PENDING,
+        description="处理状态",
+        index=True,
+    )
+    error_message = fields.TextField(null=True, description="错误信息")
+    category = fields.CharField(max_length=100, null=True, description="分类", index=True)
+    tags = fields.JSONField(default=list, description="标签")
+    folder_id = fields.BigIntField(null=True, description="所属文件夹ID", index=True)
+    extra_metadata = fields.JSONField(default=dict, description="元数据")
+    skill_id = fields.BigIntField(null=True, description="转换后的技能ID", index=True)
+    is_converted = fields.BooleanField(default=False, description="是否已转技能", index=True)
+    converted_at = fields.DatetimeField(null=True, description="转换时间", index=True)
+
+    class Meta:
+        table = "sk_document"
+
+
+class SkillKnowVectorIndex(BaseModel, TimestampMixin):
+    uri = fields.CharField(max_length=500, description="资源URI", index=True)
+    level = fields.IntField(description="内容层级", index=True)
+    text = fields.TextField(description="索引文本")
+    vector_id = fields.CharField(max_length=500, null=True, description="Chroma向量ID", index=True)
+    extra_metadata = fields.JSONField(default=dict, description="索引元数据")
+
+    class Meta:
+        table = "sk_vector_index"
+        unique_together = ("uri", "level")
+
+
+class SkillKnowConversation(BaseModel, TimestampMixin):
+    uuid = fields.CharField(max_length=36, unique=True, description="会话UUID", index=True)
+    title = fields.CharField(max_length=200, null=True, description="会话标题", index=True)
+    extra_metadata = fields.JSONField(default=dict, description="元数据")
+
+    class Meta:
+        table = "sk_conversation"
+
+
+class SkillKnowMessage(BaseModel, TimestampMixin):
+    uuid = fields.CharField(max_length=36, unique=True, description="消息UUID", index=True)
+    conversation_id = fields.BigIntField(description="会话ID", index=True)
+    role = fields.CharEnumField(SkillKnowMessageRole, description="消息角色", index=True)
+    content = fields.TextField(description="消息内容")
+    tool_calls = fields.JSONField(null=True, description="工具调用")
+    timeline = fields.JSONField(default=list, description="时间线事件")
+    latency_ms = fields.IntField(null=True, description="响应耗时")
+    is_archived = fields.BooleanField(default=False, description="是否归档", index=True)
+    extra_metadata = fields.JSONField(default=dict, description="元数据")
+
+    class Meta:
+        table = "sk_message"
+
+
+class SkillKnowPrompt(BaseModel, TimestampMixin):
+    key = fields.CharField(max_length=100, unique=True, description="提示词Key", index=True)
+    category = fields.CharEnumField(SkillKnowPromptCategory, description="提示词分类", index=True)
+    name = fields.CharField(max_length=100, description="显示名称")
+    description = fields.CharField(max_length=500, null=True, description="描述")
+    content = fields.TextField(description="提示词内容")
+    variables = fields.JSONField(default=list, description="变量列表")
+    is_active = fields.BooleanField(default=True, description="是否启用", index=True)
+
+    class Meta:
+        table = "sk_prompt"
+
+
+class SkillKnowSystemConfig(BaseModel, TimestampMixin):
+    key = fields.CharField(max_length=100, unique=True, description="配置Key", index=True)
+    value = fields.JSONField(null=True, description="配置值")
+    description = fields.TextField(null=True, description="描述")
+    is_sensitive = fields.BooleanField(default=False, description="是否敏感")
+    group = fields.CharField(max_length=50, default="general", description="分组", index=True)
+
+    class Meta:
+        table = "sk_system_config"
+
+
+class SkillKnowUploadTask(BaseModel, TimestampMixin):
+    uuid = fields.CharField(max_length=36, unique=True, description="任务UUID", index=True)
+    status = fields.CharField(max_length=30, default="pending", description="任务状态", index=True)
+    total = fields.IntField(default=0, description="总数")
+    success_count = fields.IntField(default=0, description="成功数")
+    failed_count = fields.IntField(default=0, description="失败数")
+    result = fields.JSONField(default=dict, description="任务结果")
+    error_message = fields.TextField(null=True, description="错误信息")
+
+    class Meta:
+        table = "sk_upload_task"
+
+
+class SkillKnowContextRelation(BaseModel, TimestampMixin):
+    source_uri = fields.CharField(max_length=500, description="源URI", index=True)
+    target_uri = fields.CharField(max_length=500, description="目标URI", index=True)
+    relation_type = fields.CharField(max_length=50, description="关系类型", index=True)
+    reason = fields.TextField(default="", description="关系原因")
+    weight = fields.FloatField(default=1.0, description="权重")
+    extra_metadata = fields.JSONField(default=dict, description="元数据")
+
+    class Meta:
+        table = "sk_context_relation"
