@@ -12,7 +12,6 @@ services:
     environment:
       MYSQL_HOST: mysql
       MYSQL_PORT: 3306
-      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-dev_root_password_change_me}
       MYSQL_USER: ${MYSQL_USER:-iandsec-user-center}
       MYSQL_PASSWORD: ${MYSQL_PASSWORD:-dev_mysql_password_change_me}
       MYSQL_DATABASE: ${MYSQL_DATABASE:-iandsec-user-center}
@@ -45,6 +44,7 @@ services:
     container_name: iandsec-uc-mysql
     environment:
       MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-dev_root_password_change_me}
+      MYSQL_ROOT_HOST: "%"
       MYSQL_DATABASE: ${MYSQL_DATABASE:-iandsec-user-center}
       MYSQL_USER: ${MYSQL_USER:-iandsec-user-center}
       MYSQL_PASSWORD: ${MYSQL_PASSWORD:-dev_mysql_password_change_me}
