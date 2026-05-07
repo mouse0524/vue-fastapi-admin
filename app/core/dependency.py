@@ -12,7 +12,14 @@ class AuthControl:
     @classmethod
     async def is_authed(cls, token: str = Header(..., description="token验证")) -> Optional["User"]:
         try:
-            decode_data = jwt.decode(token, settings.SECRET_KEY, algorithms=settings.JWT_ALGORITHM)
+            decode_data = jwt.decode(
+                token,
+                settings.SECRET_KEY,
+                algorithms=[settings.JWT_ALGORITHM],
+                issuer=settings.JWT_ISSUER,
+                audience=settings.JWT_AUDIENCE,
+                options={"require": ["exp", "iat", "iss", "aud", "jti"]},
+            )
             user_id = decode_data.get("user_id")
             user = await User.filter(id=user_id).first()
             if not user:

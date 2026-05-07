@@ -34,10 +34,13 @@ ADD /deploy/web.conf /etc/nginx/sites-available/web.conf
 RUN rm -f /etc/nginx/sites-enabled/default \
     && ln -s /etc/nginx/sites-available/web.conf /etc/nginx/sites-enabled/ \
     && useradd --system --create-home --home-dir /home/app app \
-    && mkdir -p /opt/iandsec-uc/storage /opt/iandsec-uc/app/logs \
-    && chown -R app:app /opt/iandsec-uc
+    && mkdir -p /opt/iandsec-uc/storage /opt/iandsec-uc/app/logs /var/cache/nginx /var/log/nginx /var/lib/nginx \
+    && touch /tmp/nginx.pid \
+    && chown -R app:app /opt/iandsec-uc /var/cache/nginx /var/log/nginx /var/lib/nginx /tmp/nginx.pid
 
 ENV LANG=zh_CN.UTF-8
-EXPOSE 80
+EXPOSE 8080
+
+USER app
 
 ENTRYPOINT [ "sh", "entrypoint.sh" ]

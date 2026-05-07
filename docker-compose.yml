@@ -23,7 +23,7 @@ services:
       INITIAL_ADMIN_EMAIL: ${INITIAL_ADMIN_EMAIL:-admin@admin.com}
       INITIAL_ADMIN_PASSWORD: ${INITIAL_ADMIN_PASSWORD:?INITIAL_ADMIN_PASSWORD is required}
     ports:
-      - "80:80"
+      - "80:8080"
     volumes:
       - app_storage:/opt/iandsec-uc/storage
       - app_logs:/opt/iandsec-uc/app/logs
@@ -55,13 +55,13 @@ services:
   redis:
     image: redis:7-alpine
     container_name: iandsec-uc-redis
-    command: redis-server --appendonly yes --requirepass $${REDIS_PASSWORD}
+    command: redis-server --appendonly yes --requirepass ${REDIS_PASSWORD:?REDIS_PASSWORD is required}
     environment:
       REDIS_PASSWORD: ${REDIS_PASSWORD:?REDIS_PASSWORD is required}
     volumes:
       - redis_data:/data
     healthcheck:
-      test: ["CMD-SHELL", "redis-cli -a $${REDIS_PASSWORD} ping | grep PONG"]
+      test: ["CMD-SHELL", "redis-cli -a \"$${REDIS_PASSWORD}\" ping | grep -q PONG"]
       interval: 10s
       timeout: 5s
       retries: 10

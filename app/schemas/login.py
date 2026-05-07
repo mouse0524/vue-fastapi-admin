@@ -1,4 +1,5 @@
 from datetime import datetime
+from uuid import UUID
 
 from pydantic import BaseModel, Field
 
@@ -19,4 +20,8 @@ class JWTPayload(BaseModel):
     user_id: int
     username: str
     is_superuser: bool
+    iss: str
+    aud: str
+    iat: datetime
+    jti: UUID
     exp: datetime

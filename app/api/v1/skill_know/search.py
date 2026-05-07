@@ -5,6 +5,7 @@ from app.schemas.skill_know import SkillKnowSqlIn
 from app.services.skill_know.search_service import skill_know_search_service
 
 router = APIRouter()
+sql_router = APIRouter()
 
 
 @router.get("", summary="统一搜索")
@@ -12,7 +13,7 @@ async def unified_search(q: str = Query(...), type: str | None = Query(None), li
     return Success(data=await skill_know_search_service.unified(q, search_type=type, limit=limit))
 
 
-@router.post("/sql", summary="SQL只读搜索")
+@sql_router.post("/sql", summary="SQL只读搜索")
 async def sql_search(payload: SkillKnowSqlIn):
     return Success(data=await skill_know_search_service.sql(payload.query))
 

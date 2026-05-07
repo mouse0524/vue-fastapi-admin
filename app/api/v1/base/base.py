@@ -1,5 +1,6 @@
 from datetime import datetime, timedelta, timezone
 import json
+import uuid
 
 from fastapi import APIRouter, Request
 from fastapi.responses import FileResponse
@@ -89,6 +90,10 @@ async def login_access_token(credentials: CredentialsSchema, request: Request):
                 user_id=user.id,
                 username=user.username,
                 is_superuser=user.is_superuser,
+                iss=settings.JWT_ISSUER,
+                aud=settings.JWT_AUDIENCE,
+                iat=datetime.now(timezone.utc),
+                jti=uuid.uuid4(),
                 exp=expire,
             )
         ),

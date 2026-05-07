@@ -1,5 +1,4 @@
 import os
-import secrets
 import typing
 
 from pydantic_settings import BaseSettings
@@ -23,9 +22,11 @@ class Settings(BaseSettings):
     PROJECT_ROOT: str = os.path.abspath(os.path.join(os.path.dirname(__file__), os.pardir))
     BASE_DIR: str = os.path.abspath(os.path.join(PROJECT_ROOT, os.pardir))
     LOGS_ROOT: str = os.path.join(BASE_DIR, "app/logs")
-    SECRET_KEY: str = os.getenv("SECRET_KEY") or secrets.token_urlsafe(32)
+    SECRET_KEY: str = os.getenv("SECRET_KEY", "")
     JWT_ALGORITHM: str = "HS256"
     JWT_ACCESS_TOKEN_EXPIRE_MINUTES: int = int(os.getenv("JWT_ACCESS_TOKEN_EXPIRE_MINUTES", "60"))
+    JWT_ISSUER: str = os.getenv("JWT_ISSUER", "iandsec-uc")
+    JWT_AUDIENCE: str = os.getenv("JWT_AUDIENCE", "iandsec-uc-clients")
     INITIAL_ADMIN_USERNAME: str = os.getenv("INITIAL_ADMIN_USERNAME", "admin")
     INITIAL_ADMIN_EMAIL: str = os.getenv("INITIAL_ADMIN_EMAIL", "admin@admin.com")
     INITIAL_ADMIN_PASSWORD: str | None = os.getenv("INITIAL_ADMIN_PASSWORD")
@@ -33,7 +34,7 @@ class Settings(BaseSettings):
     MYSQL_HOST: str = os.getenv("MYSQL_HOST", "127.0.0.1")
     MYSQL_PORT: int = int(os.getenv("MYSQL_PORT", "3306"))
     MYSQL_USER: str = os.getenv("MYSQL_USER", "root")
-    MYSQL_PASSWORD: str = os.getenv("MYSQL_PASSWORD", "123456")
+    MYSQL_PASSWORD: str = os.getenv("MYSQL_PASSWORD", "")
     MYSQL_DATABASE: str = os.getenv("MYSQL_DATABASE", "iandsec-user-center")
     REDIS_HOST: str = os.getenv("REDIS_HOST", "127.0.0.1")
     REDIS_PORT: int = int(os.getenv("REDIS_PORT", "6379"))
@@ -125,3 +126,6 @@ class Settings(BaseSettings):
     DATETIME_FORMAT: str = "%Y-%m-%d %H:%M:%S"
 
 settings = Settings()
+
+if not settings.SECRET_KEY:
+    raise RuntimeError("SECRET_KEY must be set")

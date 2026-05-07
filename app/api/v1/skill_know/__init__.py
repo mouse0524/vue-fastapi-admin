@@ -1,5 +1,7 @@
 from fastapi import APIRouter
 
+from app.settings import settings
+
 from .chat import router as chat_router
 from .documents import router as documents_router
 from .folders import router as folders_router
@@ -8,7 +10,7 @@ from .health import router as health_router
 from .pack import router as pack_router
 from .prompts import router as prompts_router
 from .quick_setup import router as quick_setup_router
-from .search import router as search_router
+from .search import router as search_router, sql_router
 from .skills import router as skills_router
 from .support import router as support_router
 from .upload import router as upload_router
@@ -18,6 +20,8 @@ skill_know_router.include_router(folders_router, prefix="/folders", tags=["Skill
 skill_know_router.include_router(skills_router, prefix="/skills", tags=["Skill-Know 技能"])
 skill_know_router.include_router(documents_router, prefix="/documents", tags=["Skill-Know 文档"])
 skill_know_router.include_router(search_router, prefix="/search", tags=["Skill-Know 搜索"])
+if settings.SKILL_KNOW_SQL_SEARCH_ENABLED:
+    skill_know_router.include_router(sql_router, prefix="/search", tags=["Skill-Know SQL 搜索"])
 skill_know_router.include_router(support_router, prefix="/support", tags=["Skill-Know 产品支持"])
 skill_know_router.include_router(graph_router, prefix="/graph", tags=["Skill-Know 知识图谱"])
 skill_know_router.include_router(chat_router, prefix="/chat", tags=["Skill-Know 对话"])
