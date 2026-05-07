@@ -115,8 +115,9 @@ function eventTitle(type) {
               </NSpace>
             <template v-if="!isCollapsed(item.type)">
             <div v-if="item.type === 'search.results'" class="event-body">
-              <div v-for="skill in item.payload.items" :key="skill.id" class="skill-hit">
-                <b>{{ skill.name }}</b><span> score {{ skill.score || 0 }}</span>
+              <div v-for="skill in item.payload.items" :key="skill.chunk_uri || skill.id" class="skill-hit">
+                <b>{{ skill.name || skill.title }}</b><span>{{ skill.source_type || 'skill' }} · score {{ skill.score || 0 }}</span>
+                <div v-if="skill.heading" class="match-reasons">{{ skill.heading }}</div>
               </div>
             </div>
             <div v-else-if="item.type === 'support.match'" class="event-body">

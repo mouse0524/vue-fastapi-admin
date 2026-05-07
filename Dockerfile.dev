@@ -5,10 +5,16 @@ RUN sed -i 's/deb.debian.org/mirrors.aliyun.com/g' /etc/apt/sources.list
 
 WORKDIR /opt/vue-fastapi-admin
 
+ENV PYTHONUNBUFFERED=1 \
+    PIP_NO_CACHE_DIR=1 \
+    PNPM_HOME=/root/.local/share/pnpm
+
+ENV PATH=${PNPM_HOME}:${PATH}
+
 # 安装 Node.js 和 pnpm
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
-    gcc python3-dev bash curl gnupg \
+    gcc python3-dev bash curl gnupg procps \
     && curl -fsSL https://deb.nodesource.com/setup_20.x | bash - \
     && apt-get install -y nodejs \
     && corepack enable \
@@ -16,9 +22,13 @@ RUN apt-get update \
     && pnpm config set registry https://registry.npmmirror.com \
     && rm -rf /var/lib/apt/lists/*
 
-# 复制依赖文件并安装
+# 复制依赖文件并安装后端依赖。源码运行时通过 compose bind mount 覆盖。
 COPY requirements.txt .
 RUN pip install -r requirements.txt -i https://pypi.tuna.tsinghua.edu.cn/simple
+
+# 预装前端依赖，运行时仍会基于挂载源码校验 pnpm install。
+COPY web/package.json web/pnpm-lock.yaml ./web/
+RUN cd web && pnpm install --frozen-lockfile
 
 ENV LANG=zh_CN.UTF-8
 EXPOSE 9999 3100

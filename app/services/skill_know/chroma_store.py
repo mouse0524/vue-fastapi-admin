@@ -1,7 +1,7 @@
 import os
 from typing import Any
 
-from app.models.admin import SkillKnowVectorIndex
+from app.models.admin import SkillKnowDocumentChunk, SkillKnowVectorIndex
 from app.settings import settings
 from app.services.skill_know.config_service import skill_know_config_service
 from app.services.skill_know.openai_client import skill_know_openai_client
@@ -20,6 +20,9 @@ class SkillKnowChromaStore:
     def _collection(self, level: int):
         name = "skill_know_l0" if level == 0 else "skill_know_l1"
         return self._client().get_or_create_collection(name=name, metadata={"hnsw:space": "cosine"})
+
+    def _document_collection(self):
+        return self._client().get_or_create_collection(name="skill_know_documents", metadata={"hnsw:space": "cosine"})
 
     async def upsert(self, *, uri: str, level: int, text: str, metadata: dict[str, Any]) -> None:
         if not text:
@@ -83,6 +86,61 @@ class SkillKnowChromaStore:
                 "metadata": row.extra_metadata or {},
                 "score": 0.5,
                 "matched_by": "text",
+            }
+            for row in rows
+        ]
+
+    async def upsert_document_chunk(self, *, chunk_uri: str, text: str, metadata: dict[str, Any]) -> str | None:
+        if not text:
+            return None
+        if await skill_know_config_service.is_configured():
+            embeddings = await skill_know_openai_client.embeddings([text])
+            embedding = embeddings[0] if embeddings else None
+            if embedding:
+                clean_metadata = {k: v for k, v in metadata.items() if v is not None}
+                self._document_collection().upsert(ids=[chunk_uri], documents=[text], embeddings=[embedding], metadatas=[clean_metadata])
+                return chunk_uri
+        return None
+
+    async def delete_document_chunks(self, chunk_uris: list[str]) -> None:
+        if not chunk_uris:
+            return
+        try:
+            self._document_collection().delete(ids=chunk_uris)
+        except Exception:
+            pass
+
+    async def search_document_chunks(self, query: str, *, limit: int = 20) -> list[dict]:
+        if await skill_know_config_service.is_configured():
+            try:
+                embeddings = await skill_know_openai_client.embeddings([query])
+                embedding = embeddings[0] if embeddings else None
+                if embedding:
+                    result = self._document_collection().query(query_embeddings=[embedding], n_results=limit)
+                    ids = result.get("ids", [[]])[0]
+                    docs = result.get("documents", [[]])[0]
+                    metadatas = result.get("metadatas", [[]])[0]
+                    distances = result.get("distances", [[]])[0]
+                    return [
+                        {
+                            "vector_id": ids[idx],
+                            "text": docs[idx],
+                            "metadata": metadatas[idx] or {},
+                            "score": max(0.0, 1.0 - float(distances[idx] or 0)),
+                            "matched_by": "document_vector",
+                        }
+                        for idx in range(len(ids))
+                    ]
+            except Exception:
+                pass
+        rows = await SkillKnowDocumentChunk.filter(content__contains=query).limit(limit)
+        return [
+            {
+                "vector_id": row.vector_id or row.uri,
+                "text": row.content,
+                "metadata": row.extra_metadata or {},
+                "score": 0.5,
+                "matched_by": "document_text",
             }
             for row in rows
         ]

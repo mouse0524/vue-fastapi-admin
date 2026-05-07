@@ -34,12 +34,12 @@ async function runSql() {
     <div class="sk-theme-page">
     <div class="sk-hero">
       <h2 class="sk-hero-title">分层语义搜索台</h2>
-      <p class="sk-hero-sub">结合 L0 摘要召回、L1 概览重排与关系链路补充，支持 SQL 只读核查。</p>
+      <p class="sk-hero-sub">结合 Markdown 文档分块、Skill 摘要和 ChromaDB 向量索引进行语义检索，支持 SQL 只读核查。</p>
     </div>
     <NSpace vertical size="large">
       <NCard :bordered="false" class="hero-card">
         <h2>Skill-Know 分层检索</h2>
-        <p>基于 L0 摘要、L1 概览和 ChromaDB 向量索引进行知识检索；不可用时自动降级文本搜索。</p>
+        <p>基于 Markdown chunks、Skill 和 ChromaDB 向量索引进行知识检索；不可用时自动降级文本搜索。</p>
         <NSpace align="center">
           <NInput v-model:value="q" size="large" placeholder="输入自然语言问题，例如：如何配置 OpenAI？" @keyup.enter="search" />
           <NSelect v-model:value="type" style="width: 140px" :options="[{label:'全部',value:'all'},{label:'Skill',value:'skill'},{label:'文档',value:'document'}]" />
@@ -74,6 +74,17 @@ async function runSql() {
         </NGi>
       </NGrid>
 
+      <NCard v-if="result?.chunks?.length" title="Markdown 片段结果" :bordered="false">
+        <NSpace vertical>
+          <NCard v-for="item in result.chunks" :key="item.chunk_uri" size="small" class="result-card">
+            <NSpace justify="space-between"><b>{{ item.title }}</b><NTag type="info">{{ item.score || 0 }}</NTag></NSpace>
+            <p v-if="item.heading" class="muted">{{ item.heading }}</p>
+            <p>{{ item.abstract || item.content?.slice(0, 220) }}</p>
+            <NTag size="small">{{ item.matched_by || 'vector' }}</NTag>
+          </NCard>
+        </NSpace>
+      </NCard>
+
       <NCard title="SQL 只读搜索" :bordered="false">
         <NSpace vertical>
           <NInput v-model:value="sql" type="textarea" :autosize="{ minRows: 3, maxRows: 8 }" />
@@ -90,5 +101,6 @@ async function runSql() {
 .hero-card { border-radius: 20px; background: linear-gradient(135deg, rgba(24,160,88,.12), rgba(32,128,240,.10)); }
 .hero-card h2 { margin-top: 0; }
 .result-card { border-radius: 14px; }
+.muted { color: #64748b; }
 pre { white-space: pre-wrap; background: #0f172a; color: #dbeafe; padding: 16px; border-radius: 12px; max-height: 360px; overflow: auto; }
 </style>

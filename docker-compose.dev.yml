@@ -19,6 +19,9 @@ services:
       REDIS_PORT: 6379
       REDIS_PASSWORD: redis_p82Ytd
       UVICORN_RELOAD: "1"
+      CHOKIDAR_USEPOLLING: "true"
+      WATCHPACK_POLLING: "true"
+      VITE_BASE_API: /api/v1
     ports:
       - "9999:9999"
       - "3100:3100"
@@ -27,6 +30,7 @@ services:
       - app_storage:/opt/vue-fastapi-admin/storage
       - app_logs:/opt/vue-fastapi-admin/app/logs
       - web_node_modules:/opt/vue-fastapi-admin/web/node_modules
+      - pnpm_store:/root/.local/share/pnpm/store
     restart: unless-stopped
     stdin_open: true
     tty: true
@@ -77,3 +81,4 @@ volumes:
   app_storage:
   app_logs:
   web_node_modules:
+  pnpm_store:

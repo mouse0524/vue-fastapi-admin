@@ -1,34 +1,54 @@
+from __future__ import annotations
+
+import re
 from pathlib import Path
 
 
+SUPPORTED_MARKDOWN_UPLOAD_EXTENSIONS = {
+    "pdf",
+    "pptx",
+    "docx",
+    "xlsx",
+    "html",
+    "htm",
+    "csv",
+    "json",
+    "xml",
+    "txt",
+    "md",
+    "markdown",
+}
+
+SUPPORTED_MARKDOWN_UPLOAD_MESSAGE = "仅支持 PDF、PowerPoint、Word、Excel、HTML、CSV、JSON、XML、TXT、MD 文件"
+
+
 class SkillKnowDocumentParser:
-    async def parse(self, file_path: str, file_type: str) -> str:
+    async def convert_to_markdown(self, file_path: str, file_type: str | None = None) -> str:
         ext = (file_type or Path(file_path).suffix).lower().lstrip(".")
-        if ext in {"txt", "md", "markdown"}:
-            return Path(file_path).read_text(encoding="utf-8", errors="ignore")
-        if ext == "pdf":
-            return self._parse_pdf(file_path)
-        if ext in {"docx", "doc"}:
-            return self._parse_docx(file_path)
-        return Path(file_path).read_text(encoding="utf-8", errors="ignore")
+        if ext not in SUPPORTED_MARKDOWN_UPLOAD_EXTENSIONS:
+            raise ValueError(SUPPORTED_MARKDOWN_UPLOAD_MESSAGE)
+        if ext in {"md", "markdown", "txt"}:
+            markdown = Path(file_path).read_text(encoding="utf-8", errors="ignore")
+        else:
+            try:
+                from markitdown import MarkItDown
 
-    def _parse_pdf(self, file_path: str) -> str:
-        try:
-            from pypdf import PdfReader
+                result = MarkItDown().convert(file_path)
+                markdown = result.text_content or ""
+            except Exception as exc:
+                raise ValueError(f"Markdown 转换失败: {exc}") from exc
+        markdown = self._normalize(markdown)
+        if not markdown:
+            raise ValueError("Markdown 转换结果为空")
+        return markdown
 
-            reader = PdfReader(file_path)
-            return "\n\n".join(page.extract_text() or "" for page in reader.pages).strip()
-        except Exception as exc:
-            raise ValueError(f"PDF 解析失败: {exc}") from exc
+    async def parse(self, file_path: str, file_type: str) -> str:
+        return await self.convert_to_markdown(file_path, file_type)
 
-    def _parse_docx(self, file_path: str) -> str:
-        try:
-            from docx import Document
-
-            doc = Document(file_path)
-            return "\n".join(p.text for p in doc.paragraphs if p.text).strip()
-        except Exception as exc:
-            raise ValueError(f"Word 解析失败: {exc}") from exc
+    def _normalize(self, markdown: str) -> str:
+        value = str(markdown or "").replace("\r\n", "\n").replace("\r", "\n")
+        value = re.sub(r"\n{4,}", "\n\n\n", value)
+        return value.strip()
 
 
 skill_know_document_parser = SkillKnowDocumentParser()

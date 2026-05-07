@@ -285,6 +285,23 @@ class SkillKnowDocument(BaseModel, TimestampMixin):
         table = "sk_document"
 
 
+class SkillKnowDocumentChunk(BaseModel, TimestampMixin):
+    uuid = fields.CharField(max_length=36, unique=True, description="Chunk UUID", index=True)
+    document_id = fields.BigIntField(description="文档ID", index=True)
+    uri = fields.CharField(max_length=500, unique=True, description="Chunk URI", index=True)
+    chunk_index = fields.IntField(description="分块序号", index=True)
+    heading = fields.CharField(max_length=300, null=True, description="标题路径")
+    content = fields.TextField(description="Markdown分块内容")
+    content_hash = fields.CharField(max_length=64, description="内容哈希", index=True)
+    token_count = fields.IntField(default=0, description="粗略Token数")
+    vector_id = fields.CharField(max_length=500, null=True, description="Chroma向量ID", index=True)
+    extra_metadata = fields.JSONField(default=dict, description="元数据")
+
+    class Meta:
+        table = "sk_document_chunk"
+        unique_together = ("document_id", "chunk_index")
+
+
 class SkillKnowVectorIndex(BaseModel, TimestampMixin):
     uri = fields.CharField(max_length=500, description="资源URI", index=True)
     level = fields.IntField(description="内容层级", index=True)

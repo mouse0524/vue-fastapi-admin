@@ -150,7 +150,7 @@ username：admin
 password：123456
 
 #### 开发环境部署
-开发环境支持代码热更新，代码修改后会自动重启服务。
+开发环境使用单个 app 镜像提供 Python、Node.js、pnpm 和项目依赖，源码通过 bind mount 挂载到容器内。你在宿主机修改代码后，前端 Vite 会热更新，后端 `python run.py` 会在 `UVICORN_RELOAD=1` 下自动重载。
 
 ##### 使用 docker-compose
 
@@ -160,12 +160,39 @@ cd vue-fastapi-admin
 docker-compose -f docker-compose.dev.yml up -d --build
 ```
 
+如果只是重新启动，不需要重建镜像：
+
+```sh
+docker-compose -f docker-compose.dev.yml up -d
+```
+
+查看前后端日志：
+
+```sh
+docker-compose -f docker-compose.dev.yml logs -f app
+```
+
 ##### 开发环境特性
 - 代码目录挂载到容器，修改代码实时生效
 - 前端使用 `pnpm run dev` 启动，支持热更新
 - 后端使用 `python run.py` 启动，支持热重载（UVICORN_RELOAD=1）
 - 暴露端口：9999（后端）、3100（前端开发服务器）
 - node_modules 独立挂载，避免宿主机依赖问题
+- pnpm store 使用 Docker volume 缓存，加快依赖安装
+- Windows / Docker Desktop 环境启用文件监听轮询，提升热更新稳定性
+
+##### 容器内运行命令
+
+```sh
+docker-compose -f docker-compose.dev.yml exec app sh
+```
+
+进入容器后可直接运行：
+
+```sh
+python -m pytest
+cd web && pnpm run build
+```
 
 ##### 访问
 
