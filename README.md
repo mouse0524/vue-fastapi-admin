@@ -121,17 +121,44 @@ docker-compose -f docker-compose.dev.yml logs -f app
 ### 进入 app 容器
 
 ```sh
-docker-compose -f docker-compose.dev.yml exec app sh
+docker run -d --restart=always --name=vue-fastapi-admin -p 9999:80 vue-fastapi-admin
 ```
 
-进入容器后可执行：
+##### 访问
+
+http://localhost:9999
+
+username：admin
+
+password：123456
+
+#### 开发环境部署
+开发环境支持代码热更新，代码修改后会自动重启服务。
+
+##### 使用 docker-compose
 
 ```sh
-python -m pytest
-cd web && pnpm run build
+git clone https://github.com/mizhexiaoxiao/vue-fastapi-admin.git
+cd vue-fastapi-admin
+docker-compose -f docker-compose.dev.yml up -d --build
 ```
 
-### 停止开发环境
+##### 开发环境特性
+- 代码目录挂载到容器，修改代码实时生效
+- 前端使用 `pnpm run dev` 启动，支持热更新
+- 后端使用 `python run.py` 启动，支持热重载（UVICORN_RELOAD=1）
+- 暴露端口：9999（后端）、3100（前端开发服务器）
+- node_modules 独立挂载，避免宿主机依赖问题
+
+##### 访问
+
+http://localhost:3100
+
+username：admin
+
+password：123456
+
+##### 停止开发环境
 
 ```sh
 docker-compose -f docker-compose.dev.yml down
