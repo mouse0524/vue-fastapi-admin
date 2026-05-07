@@ -1,7 +1,6 @@
-FROM python:3.11-slim-bullseye
+FROM node:20-bookworm-slim AS node
 
-# 使用阿里云镜像加速
-RUN sed -i 's/deb.debian.org/mirrors.aliyun.com/g' /etc/apt/sources.list
+FROM python:3.11-slim-bookworm
 
 WORKDIR /opt/iandsec-uc
 
@@ -11,12 +10,13 @@ ENV PYTHONUNBUFFERED=1 \
 
 ENV PATH=${PNPM_HOME}:${PATH}
 
-# 安装 Node.js 和 pnpm
+# 复制官方 Node 20 运行时，避免通过 apt/nodesource 下载 Node。
+COPY --from=node /usr/local /usr/local
+
+# 安装最小系统依赖。python:3.11 镜像已包含匹配的 Python 头文件，不需要安装 python3-dev。
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
-    gcc python3-dev bash curl gnupg procps \
-    && curl -fsSL https://deb.nodesource.com/setup_20.x | bash - \
-    && apt-get install -y nodejs \
+    gcc bash curl procps \
     && corepack enable \
     && corepack prepare pnpm@9.15.9 --activate \
     && pnpm config set registry https://registry.npmmirror.com \
