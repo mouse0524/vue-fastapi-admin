@@ -49,8 +49,7 @@ export async function resReject(error) {
     try {
       const userStore = useUserStore()
       userStore.logout()
-    } catch (error) {
-      console.log('resReject error', error)
+    } catch {
       return
     }
   }

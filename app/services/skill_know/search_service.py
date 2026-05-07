@@ -3,6 +3,7 @@ from __future__ import annotations
 from fastapi import HTTPException
 from tortoise import Tortoise
 
+from app.settings import settings
 from app.services.skill_know.document_service import skill_know_document_service
 from app.services.skill_know.retriever import skill_know_retriever
 
@@ -25,6 +26,8 @@ class SkillKnowSearchService:
         return result
 
     async def sql(self, query: str) -> dict:
+        if not settings.SKILL_KNOW_SQL_SEARCH_ENABLED:
+            raise HTTPException(status_code=403, detail="SQL 搜索功能未启用")
         clean = query.strip().rstrip(";")
         upper = clean.upper()
         if not upper.startswith("SELECT "):

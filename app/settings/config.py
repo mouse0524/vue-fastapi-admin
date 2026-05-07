@@ -1,4 +1,5 @@
 import os
+import secrets
 import typing
 
 from pydantic_settings import BaseSettings
@@ -10,20 +11,25 @@ class Settings(BaseSettings):
     PROJECT_NAME: str = "iandsec-uc"
     APP_DESCRIPTION: str = "Description"
 
-    CORS_ORIGINS: typing.List = ["*"]
-    CORS_ALLOW_CREDENTIALS: bool = True
-    CORS_ALLOW_METHODS: typing.List = ["*"]
-    CORS_ALLOW_HEADERS: typing.List = ["*"]
+    CORS_ORIGINS: typing.List = ["http://localhost:3100", "http://127.0.0.1:3100"]
+    CORS_ALLOW_CREDENTIALS: bool = False
+    CORS_ALLOW_METHODS: typing.List = ["GET", "POST", "PUT", "DELETE"]
+    CORS_ALLOW_HEADERS: typing.List = ["Content-Type", "Authorization", "token"]
     TRUST_PROXY_HEADERS: bool = False
 
-    DEBUG: bool = True
+    DEBUG: bool = False
+    OPENAPI_ENABLED: bool = False
 
     PROJECT_ROOT: str = os.path.abspath(os.path.join(os.path.dirname(__file__), os.pardir))
     BASE_DIR: str = os.path.abspath(os.path.join(PROJECT_ROOT, os.pardir))
     LOGS_ROOT: str = os.path.join(BASE_DIR, "app/logs")
-    SECRET_KEY: str = "3488a63e1765035d386f05409663f55c83bfae3b3c61a932744b20ad14244dcf"  # openssl rand -hex 32
+    SECRET_KEY: str = os.getenv("SECRET_KEY") or secrets.token_urlsafe(32)
     JWT_ALGORITHM: str = "HS256"
-    JWT_ACCESS_TOKEN_EXPIRE_MINUTES: int = 60 * 24 * 7  # 7 day
+    JWT_ACCESS_TOKEN_EXPIRE_MINUTES: int = int(os.getenv("JWT_ACCESS_TOKEN_EXPIRE_MINUTES", "60"))
+    INITIAL_ADMIN_USERNAME: str = os.getenv("INITIAL_ADMIN_USERNAME", "admin")
+    INITIAL_ADMIN_EMAIL: str = os.getenv("INITIAL_ADMIN_EMAIL", "admin@admin.com")
+    INITIAL_ADMIN_PASSWORD: str | None = os.getenv("INITIAL_ADMIN_PASSWORD")
+    SKILL_KNOW_SQL_SEARCH_ENABLED: bool = os.getenv("SKILL_KNOW_SQL_SEARCH_ENABLED", "0").lower() in {"1", "true", "yes", "on"}
     MYSQL_HOST: str = os.getenv("MYSQL_HOST", "127.0.0.1")
     MYSQL_PORT: int = int(os.getenv("MYSQL_PORT", "3306"))
     MYSQL_USER: str = os.getenv("MYSQL_USER", "root")
@@ -117,7 +123,5 @@ class Settings(BaseSettings):
         "timezone": "Asia/Shanghai",  # Timezone setting
     }
     DATETIME_FORMAT: str = "%Y-%m-%d %H:%M:%S"
-    KB_DEFAULT_TOP_K: int = 5
-    KB_DEFAULT_MODEL: str = "mock-rag-v1"
 
 settings = Settings()

@@ -12,12 +12,16 @@ services:
     environment:
       MYSQL_HOST: mysql
       MYSQL_PORT: 3306
-      MYSQL_USER: iandsec-user-center
-      MYSQL_PASSWORD: Cadhew2RiA5HD87S
-      MYSQL_DATABASE: iandsec-user-center
+      MYSQL_USER: ${MYSQL_USER:?MYSQL_USER is required}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:?MYSQL_PASSWORD is required}
+      MYSQL_DATABASE: ${MYSQL_DATABASE:-iandsec-user-center}
       REDIS_HOST: redis
       REDIS_PORT: 6379
-      REDIS_PASSWORD: redis_p82Ytd
+      REDIS_PASSWORD: ${REDIS_PASSWORD:?REDIS_PASSWORD is required}
+      SECRET_KEY: ${SECRET_KEY:?SECRET_KEY is required}
+      INITIAL_ADMIN_USERNAME: ${INITIAL_ADMIN_USERNAME:-admin}
+      INITIAL_ADMIN_EMAIL: ${INITIAL_ADMIN_EMAIL:-admin@admin.com}
+      INITIAL_ADMIN_PASSWORD: ${INITIAL_ADMIN_PASSWORD:?INITIAL_ADMIN_PASSWORD is required}
     ports:
       - "80:80"
     volumes:
@@ -29,18 +33,16 @@ services:
     image: mysql:8.0
     container_name: iandsec-uc-mysql
     environment:
-      MYSQL_ROOT_PASSWORD: root_p82Ytd
-      MYSQL_DATABASE: iandsec-user-center
-      MYSQL_USER: iandsec-user-center
-      MYSQL_PASSWORD: Cadhew2RiA5HD87S
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:?MYSQL_ROOT_PASSWORD is required}
+      MYSQL_DATABASE: ${MYSQL_DATABASE:-iandsec-user-center}
+      MYSQL_USER: ${MYSQL_USER:?MYSQL_USER is required}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:?MYSQL_PASSWORD is required}
       TZ: Asia/Shanghai
     command:
       - --character-set-server=utf8mb4
       - --collation-server=utf8mb4_unicode_ci
       - --default-time-zone=+08:00
       - --default-authentication-plugin=mysql_native_password
-    ports:
-      - "33060:3306"
     volumes:
       - mysql_data:/var/lib/mysql
     healthcheck:
@@ -53,13 +55,13 @@ services:
   redis:
     image: redis:7-alpine
     container_name: iandsec-uc-redis
-    command: redis-server --appendonly yes --requirepass redis_p82Ytd
-    ports:
-      - "6379:6379"
+    command: redis-server --appendonly yes --requirepass $${REDIS_PASSWORD}
+    environment:
+      REDIS_PASSWORD: ${REDIS_PASSWORD:?REDIS_PASSWORD is required}
     volumes:
       - redis_data:/data
     healthcheck:
-      test: ["CMD-SHELL", "redis-cli -a redis_p82Ytd ping | grep PONG"]
+      test: ["CMD-SHELL", "redis-cli -a $${REDIS_PASSWORD} ping | grep PONG"]
       interval: 10s
       timeout: 5s
       retries: 10

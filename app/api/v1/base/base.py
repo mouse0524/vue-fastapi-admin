@@ -23,21 +23,9 @@ from app.schemas.users import UpdatePassword
 from app.settings import settings
 from app.utils.jwt_utils import create_access_token
 from app.utils.password import get_password_hash, verify_password
+from app.utils.request import get_client_ip
 
 router = APIRouter()
-
-
-def _get_client_ip(request: Request) -> str:
-    if settings.TRUST_PROXY_HEADERS:
-        forwarded_for = request.headers.get("x-forwarded-for")
-        if forwarded_for:
-            return forwarded_for.split(",")[0].strip()
-        real_ip = request.headers.get("x-real-ip")
-        if real_ip:
-            return real_ip.strip()
-    if request.client and request.client.host:
-        return request.client.host
-    return "unknown"
 
 
 def _format_lock_message(ttl_seconds: int) -> str:
@@ -54,7 +42,7 @@ def _login_error_message(config: dict, fallback: str) -> str:
 @router.post("/access_token", summary="获取token")
 async def login_access_token(credentials: CredentialsSchema, request: Request):
     logger.info("[api.login] start username={}", credentials.username)
-    client_ip = _get_client_ip(request)
+    client_ip = get_client_ip(request)
     config = await system_setting_controller.get_public_config()
 
     decision = await login_security_controller.check_lock(username=credentials.username, ip=client_ip)
@@ -188,7 +176,12 @@ async def reset_password_by_email(payload: ResetPasswordByEmailIn):
 
 @router.get("/workbench_stats", summary="工作台统计", dependencies=[DependAuth])
 async def get_workbench_stats():
-    cache_key = "stats:workbench:global:v1"
+    user_id = CTX_USER_ID.get()
+    user = await user_controller.get(id=user_id)
+    roles = await user.roles
+    role_names = [role.name for role in roles]
+    is_global = user.is_superuser or "管理员" in role_names or "客服" in role_names
+    cache_key = "stats:workbench:global:v1" if is_global else f"stats:workbench:user:{user_id}:v1"
     try:
         cached = await execute_redis("get", cache_key)
         if cached:
@@ -206,18 +199,25 @@ async def get_workbench_stats():
     today_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
     tomorrow_start = today_start + timedelta(days=1)
 
-    ticket_total = await Ticket.all().count()
-    ticket_pending_review = await Ticket.filter(status=TicketStatus.PENDING_REVIEW).count()
-    ticket_tech_processing = await Ticket.filter(status=TicketStatus.TECH_PROCESSING).count()
-    ticket_today_created = await Ticket.filter(created_at__gte=today_start, created_at__lt=tomorrow_start).count()
-    ticket_today_done = await Ticket.filter(
+    ticket_query = Ticket.all()
+    if not is_global:
+        if "技术" in role_names:
+            ticket_query = Ticket.filter(tech_id=user_id)
+        else:
+            ticket_query = Ticket.filter(submitter_id=user_id)
+
+    ticket_total = await ticket_query.count()
+    ticket_pending_review = await ticket_query.filter(status=TicketStatus.PENDING_REVIEW).count()
+    ticket_tech_processing = await ticket_query.filter(status=TicketStatus.TECH_PROCESSING).count()
+    ticket_today_created = await ticket_query.filter(created_at__gte=today_start, created_at__lt=tomorrow_start).count()
+    ticket_today_done = await ticket_query.filter(
         status=TicketStatus.DONE,
         finished_at__gte=today_start,
         finished_at__lt=tomorrow_start,
     ).count()
-    register_pending = await PartnerRegistration.filter(status=PartnerRegisterStatus.PENDING).count()
-    user_total = await User.all().count()
-    auditlog_today = await AuditLog.filter(created_at__gte=today_start, created_at__lt=tomorrow_start).count()
+    register_pending = await PartnerRegistration.filter(status=PartnerRegisterStatus.PENDING).count() if is_global else 0
+    user_total = await User.all().count() if is_global else 0
+    auditlog_today = await AuditLog.filter(created_at__gte=today_start, created_at__lt=tomorrow_start).count() if is_global else 0
 
     data = {
         "ticket_total": ticket_total,

@@ -65,11 +65,13 @@ def register_routers(app: FastAPI, prefix: str = "/api"):
 async def init_superuser():
     user = await user_controller.model.exists()
     if not user:
+        if not settings.INITIAL_ADMIN_PASSWORD:
+            raise RuntimeError("INITIAL_ADMIN_PASSWORD must be set before initializing the first superuser")
         await user_controller.create_user(
             UserCreate(
-                username="admin",
-                email="admin@admin.com",
-                password="123456",
+                username=settings.INITIAL_ADMIN_USERNAME,
+                email=settings.INITIAL_ADMIN_EMAIL,
+                password=settings.INITIAL_ADMIN_PASSWORD,
                 is_active=True,
                 is_superuser=True,
             )

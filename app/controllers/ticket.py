@@ -149,21 +149,11 @@ class TicketController:
         if not attachment_ids:
             return 0
 
-        query = TicketAttachment.filter(
+        bound_count = await TicketAttachment.filter(
             id__in=attachment_ids,
             ticket_id=None,
-        )
-
-        # Prefer strict ownership bind first
-        bound_count = await query.filter(uploader_id__in=owner_ids).update(ticket_id=ticket_id)
-
-        # Fallback: if strict bind misses some ids, bind remaining ids without owner filter.
-        # This handles edge cases where uploader_id differs between upload contexts.
-        if bound_count < len(attachment_ids):
-            remaining_ids = await TicketAttachment.filter(id__in=attachment_ids, ticket_id=None).values_list("id", flat=True)
-            if remaining_ids:
-                relaxed_count = await TicketAttachment.filter(id__in=list(remaining_ids), ticket_id=None).update(ticket_id=ticket_id)
-                bound_count += relaxed_count
+            uploader_id__in=owner_ids,
+        ).update(ticket_id=ticket_id)
 
         if bound_count < len(attachment_ids):
             logger.warning(
@@ -173,6 +163,7 @@ class TicketController:
                 bound_count,
                 owner_ids,
             )
+            raise HTTPException(status_code=403, detail="附件不存在、已绑定或不属于当前用户")
         else:
             logger.info(
                 "[ticket.attach] bound success ticket_id={} requested={} bound={} owners={}",

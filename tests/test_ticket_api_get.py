@@ -81,6 +81,21 @@ class TicketGetApiTestCase(unittest.TestCase):
         self.assertEqual(getattr(scope_q, "join_type", ""), "AND")
         self.assertEqual(scope_q.filters.get("tech_id"), 10)
 
+    def test_ticket_actions_forbidden(self):
+        current_user = SimpleNamespace(id=10, is_superuser=False)
+        ticket = SimpleNamespace(id=1001, submitter_id=11, tech_id=12, status="pending_review")
+
+        with (
+            patch.object(tickets_module, "_get_current_user", AsyncMock(return_value=current_user)),
+            patch.object(tickets_module, "_get_user_role_names", AsyncMock(return_value=[])),
+            patch.object(tickets_module.Ticket, "get", AsyncMock(return_value=ticket)),
+        ):
+            resp = self.client.get("/api/v1/tickets/actions", params={"ticket_id": 1001})
+
+        self.assertEqual(resp.status_code, 403)
+        body = resp.json()
+        self.assertEqual(body.get("code"), 403)
+
 
 if __name__ == "__main__":
     unittest.main()

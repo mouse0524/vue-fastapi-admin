@@ -59,6 +59,35 @@ class HttpAuditLogMiddleware(BaseHTTPMiddleware):
         self.route_meta_cache: dict[tuple[str, str], tuple[str, str]] = {}
         self.max_route_cache_size = 1024
         self.max_body_size = 1024 * 1024  # 1MB 响应体大小限制
+        self.sensitive_keys = {
+            "password",
+            "old_password",
+            "new_password",
+            "token",
+            "access_token",
+            "secret",
+            "captcha_code",
+            "email_code",
+            "smtp_password",
+            "webdav_password",
+            "webdav_signature_secret",
+            "api_key",
+            "llm_api_key",
+            "ai_kb_openai_api_key",
+        }
+
+    def _mask_sensitive(self, value: Any) -> Any:
+        if isinstance(value, dict):
+            masked = {}
+            for key, item in value.items():
+                if str(key).lower() in self.sensitive_keys:
+                    masked[key] = "******"
+                else:
+                    masked[key] = self._mask_sensitive(item)
+            return masked
+        if isinstance(value, list):
+            return [self._mask_sensitive(item) for item in value]
+        return value
 
     async def get_request_args(self, request: Request) -> dict:
         args = {}
@@ -85,7 +114,7 @@ class HttpAuditLogMiddleware(BaseHTTPMiddleware):
                 except (TypeError, ValueError) as exc:
                     logger.debug("[http.audit] parse form body failed path={} error={}", request.url.path, str(exc))
 
-        return args
+        return self._mask_sensitive(args)
 
     async def get_response_body(self, request: Request, response: Response) -> Any:
         if request.method == "GET" and response.status_code < 400:
@@ -132,11 +161,11 @@ class HttpAuditLogMiddleware(BaseHTTPMiddleware):
                     if "data" in data and isinstance(data["data"], list):
                         for item in data["data"]:
                             item.pop("response_body", None)
-                return data
+                return self._mask_sensitive(data)
             except Exception:
                 return None
 
-        return self.lenient_json(body)
+        return self._mask_sensitive(self.lenient_json(body))
 
     def lenient_json(self, v: Any) -> Any:
         if isinstance(v, (str, bytes)):

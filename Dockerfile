@@ -13,8 +13,9 @@ RUN cd /opt/iandsec-uc/web \
 FROM python:3.11-slim-bullseye
 
 WORKDIR /opt/iandsec-uc
-ADD . .
-COPY /deploy/entrypoint.sh .
+COPY requirements.txt run.py ./
+COPY app ./app
+COPY deploy/entrypoint.sh .
 
 RUN --mount=type=cache,target=/var/cache/apt,sharing=locked,id=core-apt \
     --mount=type=cache,target=/var/lib/apt,sharing=locked,id=core-apt \
@@ -23,14 +24,18 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked,id=core-apt \
     && ln -sf /usr/share/zoneinfo/Asia/Shanghai /etc/localtime \
     && echo "Asia/Shanghai" > /etc/timezone \
     && apt-get update \
-    && apt-get install -y --no-install-recommends gcc python3-dev bash nginx vim curl procps net-tools default-mysql-client redis-tools
+    && apt-get install -y --no-install-recommends gcc python3-dev bash nginx curl default-mysql-client redis-tools \
+    && rm -rf /var/lib/apt/lists/*
 
 RUN pip install -r requirements.txt -i https://pypi.tuna.tsinghua.edu.cn/simple
 
 COPY --from=web /opt/iandsec-uc/web/dist /opt/iandsec-uc/web/dist
 ADD /deploy/web.conf /etc/nginx/sites-available/web.conf
 RUN rm -f /etc/nginx/sites-enabled/default \
-    && ln -s /etc/nginx/sites-available/web.conf /etc/nginx/sites-enabled/ 
+    && ln -s /etc/nginx/sites-available/web.conf /etc/nginx/sites-enabled/ \
+    && useradd --system --create-home --home-dir /home/app app \
+    && mkdir -p /opt/iandsec-uc/storage /opt/iandsec-uc/app/logs \
+    && chown -R app:app /opt/iandsec-uc
 
 ENV LANG=zh_CN.UTF-8
 EXPOSE 80

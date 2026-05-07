@@ -13,7 +13,6 @@ import {
   NInput,
   NInputNumber,
   NModal,
-  NSelect,
   NSpace,
   NSwitch,
   NTabPane,
@@ -71,10 +70,12 @@ const form = ref({
   email_verify_template: '您好，您的验证码是：{code}，{minutes}分钟内有效。',
   register_review_approve_subject: '注册审核结果通知',
   register_review_approve_is_html: true,
-  register_review_approve_template: '您好，{contact_name}，您的{register_type}注册申请已审核通过，现可使用邮箱登录系统。',
+  register_review_approve_template:
+    '您好，{contact_name}，您的{register_type}注册申请已审核通过，现可使用邮箱登录系统。',
   register_review_reject_subject: '注册审核结果通知',
   register_review_reject_is_html: true,
-  register_review_reject_template: '您好，{contact_name}，您的{register_type}注册申请已驳回。驳回理由：{reason}',
+  register_review_reject_template:
+    '您好，{contact_name}，您的{register_type}注册申请已驳回。驳回理由：{reason}',
   reset_password_subject: '密码重置验证码',
   reset_password_is_html: true,
   reset_password_template:
@@ -92,23 +93,9 @@ const form = ref({
   webdav_username: '',
   webdav_password: '',
   webdav_share_default_expire_hours: 168,
+  webdav_signature_ttl: 600,
+  webdav_max_upload_size: 50 * 1024 * 1024,
   webdav_signature_secret: '',
-  ai_kb_enabled: true,
-  ai_kb_top_k: 5,
-  ai_kb_chunk_size: 800,
-  ai_kb_chunk_overlap: 120,
-  ai_kb_max_upload_size: 20 * 1024 * 1024,
-  ai_kb_feedback_window: 20,
-  ai_kb_auto_reindex_threshold: 5,
-  ai_kb_openai_base_url: '',
-  ai_kb_openai_api_key: '',
-  ai_kb_chat_model: '',
-  ai_kb_openai_model: '',
-  ai_kb_embedding_model: '',
-  ai_kb_rerank_model: '',
-  ai_kb_document_analysis_model: '',
-  ai_kb_image_analysis_model: '',
-  ai_kb_llm_timeout_seconds: 20,
 })
 
 const previewParams = ref({
@@ -124,7 +111,7 @@ const previewParams = ref({
 const presetTemplates = {
   verifySubject: '【系统通知】邮箱验证码',
   verifyHtml: `
-<div style="font-family:Arial,\'PingFang SC\',\'Microsoft YaHei\',sans-serif;color:#1f2937;line-height:1.7;">
+<div style="font-family:Arial,'PingFang SC','Microsoft YaHei',sans-serif;color:#1f2937;line-height:1.7;">
   <h2 style="margin:0 0 12px;font-size:18px;color:#0f4c81;">邮箱验证码</h2>
   <p style="margin:0 0 10px;">您好，验证码用于本次注册校验：</p>
   <div style="display:inline-block;padding:10px 18px;border-radius:8px;background:#eff6ff;border:1px solid #bfdbfe;font-size:24px;font-weight:700;letter-spacing:4px;color:#1d4ed8;">{code}</div>
@@ -133,7 +120,7 @@ const presetTemplates = {
 `.trim(),
   approveSubject: '【系统通知】注册审核通过',
   approveHtml: `
-<div style="font-family:Arial,\'PingFang SC\',\'Microsoft YaHei\',sans-serif;color:#1f2937;line-height:1.7;">
+<div style="font-family:Arial,'PingFang SC','Microsoft YaHei',sans-serif;color:#1f2937;line-height:1.7;">
   <h2 style="margin:0 0 12px;font-size:18px;color:#15803d;">注册审核通过</h2>
   <p style="margin:0 0 8px;">您好，<b>{contact_name}</b>：</p>
   <p style="margin:0 0 8px;">您提交的 <b>{register_type}</b> 注册申请已审核通过。</p>
@@ -142,7 +129,7 @@ const presetTemplates = {
 `.trim(),
   rejectSubject: '【系统通知】注册审核驳回',
   rejectHtml: `
-<div style="font-family:Arial,\'PingFang SC\',\'Microsoft YaHei\',sans-serif;color:#1f2937;line-height:1.7;">
+<div style="font-family:Arial,'PingFang SC','Microsoft YaHei',sans-serif;color:#1f2937;line-height:1.7;">
   <h2 style="margin:0 0 12px;font-size:18px;color:#b91c1c;">注册审核驳回</h2>
   <p style="margin:0 0 8px;">您好，<b>{contact_name}</b>：</p>
   <p style="margin:0 0 8px;">您提交的 <b>{register_type}</b> 注册申请未通过审核。</p>
@@ -219,7 +206,9 @@ const rules = {
   ticket_attachment_extensions: {
     required: true,
     validator: () => {
-      const items = (form.value.ticket_attachment_extensions || []).filter((item) => String(item || '').trim())
+      const items = (form.value.ticket_attachment_extensions || []).filter((item) =>
+        String(item || '').trim(),
+      )
       if (items.length === 0) {
         return new Error('请至少配置一个允许上传类型')
       }
@@ -230,7 +219,9 @@ const rules = {
   ticket_root_causes: {
     required: true,
     validator: () => {
-      const items = (form.value.ticket_root_causes || []).filter((item) => String(item || '').trim())
+      const items = (form.value.ticket_root_causes || []).filter((item) =>
+        String(item || '').trim(),
+      )
       if (items.length === 0) {
         return new Error('请至少配置一个问题根因')
       }
@@ -241,7 +232,9 @@ const rules = {
   ticket_description_templates: {
     required: true,
     validator: () => {
-      const items = (form.value.ticket_description_templates || []).filter((item) => String(item || '').trim())
+      const items = (form.value.ticket_description_templates || []).filter((item) =>
+        String(item || '').trim(),
+      )
       if (items.length === 0) {
         return new Error('请至少配置一个问题描述模板')
       }
@@ -249,15 +242,48 @@ const rules = {
     },
     trigger: ['change', 'blur'],
   },
-  login_account_ip_fail_limit: { required: true, type: 'number', min: 1, message: '请输入正确的账号+IP失败阈值', trigger: ['blur', 'change'] },
-  login_account_ip_lock_minutes: { required: true, type: 'number', min: 1, message: '请输入正确的账号+IP锁定时长', trigger: ['blur', 'change'] },
-  login_ip_fail_limit: { required: true, type: 'number', min: 1, message: '请输入正确的IP失败阈值', trigger: ['blur', 'change'] },
-  login_ip_lock_minutes: { required: true, type: 'number', min: 1, message: '请输入正确的IP锁定时长', trigger: ['blur', 'change'] },
-  login_fail_window_minutes: { required: true, type: 'number', min: 1, message: '请输入正确的失败统计窗口', trigger: ['blur', 'change'] },
-  password_min_length: { required: true, type: 'number', min: 8, message: '密码最小长度不能小于8', trigger: ['blur', 'change'] },
-  ai_kb_openai_base_url: { required: true, message: '请输入 OpenAI 兼容 Base URL', trigger: ['input', 'blur'] },
-  ai_kb_chat_model: { required: true, message: '请输入智能对话模型', trigger: ['input', 'blur'] },
-  ai_kb_embedding_model: { required: true, message: '请输入向量模型', trigger: ['input', 'blur'] },
+  login_account_ip_fail_limit: {
+    required: true,
+    type: 'number',
+    min: 1,
+    message: '请输入正确的账号+IP失败阈值',
+    trigger: ['blur', 'change'],
+  },
+  login_account_ip_lock_minutes: {
+    required: true,
+    type: 'number',
+    min: 1,
+    message: '请输入正确的账号+IP锁定时长',
+    trigger: ['blur', 'change'],
+  },
+  login_ip_fail_limit: {
+    required: true,
+    type: 'number',
+    min: 1,
+    message: '请输入正确的IP失败阈值',
+    trigger: ['blur', 'change'],
+  },
+  login_ip_lock_minutes: {
+    required: true,
+    type: 'number',
+    min: 1,
+    message: '请输入正确的IP锁定时长',
+    trigger: ['blur', 'change'],
+  },
+  login_fail_window_minutes: {
+    required: true,
+    type: 'number',
+    min: 1,
+    message: '请输入正确的失败统计窗口',
+    trigger: ['blur', 'change'],
+  },
+  password_min_length: {
+    required: true,
+    type: 'number',
+    min: 8,
+    message: '密码最小长度不能小于8',
+    trigger: ['blur', 'change'],
+  },
   password_required_categories: {
     required: true,
     validator: () => {
@@ -292,7 +318,9 @@ async function loadData() {
       ticket_description_templates: Array.isArray(res.data?.ticket_description_templates)
         ? res.data.ticket_description_templates
         : form.value.ticket_description_templates,
-      ticket_notify_by_role: normalizeTicketNotifyByRole(res.data?.ticket_notify_by_role || form.value.ticket_notify_by_role),
+      ticket_notify_by_role: normalizeTicketNotifyByRole(
+        res.data?.ticket_notify_by_role || form.value.ticket_notify_by_role,
+      ),
     }
     const publicRes = await api.getPublicConfig()
     appStore.setSiteConfig(publicRes.data || {})
@@ -308,7 +336,6 @@ function save() {
       saving.value = true
       const payload = {
         ...form.value,
-        ai_kb_openai_base_url: normalizeModelEndpoint(form.value.ai_kb_openai_base_url),
         ticket_notify_by_role: normalizeTicketNotifyByRole(form.value.ticket_notify_by_role),
       }
       await api.updateSystemSettings(payload)
@@ -320,19 +347,6 @@ function save() {
       saving.value = false
     }
   })
-}
-
-function normalizeModelEndpoint(raw = '') {
-  const text = String(raw || '').trim().replace(/\/+$/, '')
-  if (!text) return ''
-  const suffixes = ['/chat/completions', '/embeddings', '/rerank']
-  const lower = text.toLowerCase()
-  for (const suffix of suffixes) {
-    if (lower.endsWith(suffix)) {
-      return text.slice(0, -suffix.length)
-    }
-  }
-  return text
 }
 
 async function testWebdavConnection() {
@@ -349,7 +363,6 @@ async function testWebdavConnection() {
     webdavTesting.value = false
   }
 }
-
 
 async function uploadLogo({ file, onFinish, onError }) {
   try {
@@ -383,7 +396,6 @@ function renderSafeTemplate(template, params) {
 function openPreview() {
   previewVisible.value = true
 }
-
 
 function addDescriptionTemplate() {
   form.value.ticket_description_templates.push('')
@@ -438,10 +450,20 @@ function applyPresetHtmlTemplates() {
               </NFormItem>
               <NFormItem label="网站Logo" path="site_logo">
                 <div flex items-center gap-12>
-                  <NUpload :default-upload="false" :custom-request="uploadLogo" :max="1" accept=".jpg,.jpeg,.png,.webp,.svg">
+                  <NUpload
+                    :default-upload="false"
+                    :custom-request="uploadLogo"
+                    :max="1"
+                    accept=".jpg,.jpeg,.png,.webp"
+                  >
                     <NButton :loading="logoUploading">上传本地Logo</NButton>
                   </NUpload>
-                  <img v-if="appStore.siteLogo" :src="appStore.siteLogo" alt="logo" style="height: 36px; width: 36px" />
+                  <img
+                    v-if="appStore.siteLogo"
+                    :src="appStore.siteLogo"
+                    alt="logo"
+                    style="height: 36px; width: 36px"
+                  />
                 </div>
               </NFormItem>
               <NFormItem label="开放注册">
@@ -466,14 +488,20 @@ function applyPresetHtmlTemplates() {
               </NFormItem>
               <NFormItem label="问题描述模板" path="ticket_description_templates">
                 <div class="template-editor">
-                  <div v-for="(item, index) in form.ticket_description_templates" :key="index" class="template-item">
+                  <div
+                    v-for="(item, index) in form.ticket_description_templates"
+                    :key="index"
+                    class="template-item"
+                  >
                     <NInput
                       v-model:value="form.ticket_description_templates[index]"
                       type="textarea"
                       :autosize="{ minRows: 3, maxRows: 6 }"
                       :placeholder="`模板 ${index + 1}`"
                     />
-                    <NButton quaternary type="error" @click="removeDescriptionTemplate(index)">删除</NButton>
+                    <NButton quaternary type="error" @click="removeDescriptionTemplate(index)"
+                      >删除</NButton
+                    >
                   </div>
                   <NButton dashed @click="addDescriptionTemplate">新增模板</NButton>
                 </div>
@@ -482,10 +510,24 @@ function applyPresetHtmlTemplates() {
               <NAlert type="info" class="mb-12">
                 按角色配置提醒节点：用户/代理商（客服驳回、技术驳回、处理完成），客服（提交后待客服审核），技术（通过后待技术处理）。
               </NAlert>
-              <NFormItem v-for="roleName in ticketNotifyRoles" :key="roleName" :label="`${roleName}提醒节点`">
+              <NFormItem
+                v-for="roleName in ticketNotifyRoles"
+                :key="roleName"
+                :label="`${roleName}提醒节点`"
+              >
                 <NCheckboxGroup v-model:value="form.ticket_notify_by_role[roleName]">
-                  <div style="display:grid;grid-template-columns:repeat(2,minmax(220px,1fr));gap:8px 12px;">
-                    <NCheckbox v-for="item in ticketNotifyRoleOptions[roleName]" :key="item.value" :value="item.value">
+                  <div
+                    style="
+                      display: grid;
+                      grid-template-columns: repeat(2, minmax(220px, 1fr));
+                      gap: 8px 12px;
+                    "
+                  >
+                    <NCheckbox
+                      v-for="item in ticketNotifyRoleOptions[roleName]"
+                      :key="item.value"
+                      :value="item.value"
+                    >
                       {{ item.label }}
                     </NCheckbox>
                   </div>
@@ -506,7 +548,11 @@ function applyPresetHtmlTemplates() {
                 <NInputNumber v-model:value="form.login_account_ip_fail_limit" :min="1" :max="20" />
               </NFormItem>
               <NFormItem label="账号+IP锁定(分钟)" path="login_account_ip_lock_minutes">
-                <NInputNumber v-model:value="form.login_account_ip_lock_minutes" :min="1" :max="1440" />
+                <NInputNumber
+                  v-model:value="form.login_account_ip_lock_minutes"
+                  :min="1"
+                  :max="1440"
+                />
               </NFormItem>
               <NFormItem label="IP失败阈值" path="login_ip_fail_limit">
                 <NInputNumber v-model:value="form.login_ip_fail_limit" :min="1" :max="200" />
@@ -526,7 +572,12 @@ function applyPresetHtmlTemplates() {
               <NFormItem label="密码类别" path="password_required_categories">
                 <NCheckboxGroup v-model:value="form.password_required_categories">
                   <NSpace>
-                    <NCheckbox v-for="item in passwordCategoryOptions" :key="item.value" :value="item.value">{{ item.label }}</NCheckbox>
+                    <NCheckbox
+                      v-for="item in passwordCategoryOptions"
+                      :key="item.value"
+                      :value="item.value"
+                      >{{ item.label }}</NCheckbox
+                    >
                   </NSpace>
                 </NCheckboxGroup>
               </NFormItem>
@@ -545,7 +596,11 @@ function applyPresetHtmlTemplates() {
                 <NInput v-model:value="form.smtp_username" placeholder="可选，默认使用发件邮箱" />
               </NFormItem>
               <NFormItem label="SMTP密码">
-                <NInput v-model:value="form.smtp_password" type="password" show-password-on="mousedown" />
+                <NInput
+                  v-model:value="form.smtp_password"
+                  type="password"
+                  show-password-on="mousedown"
+                />
               </NFormItem>
               <NFormItem label="发件邮箱">
                 <NInput v-model:value="form.smtp_sender" placeholder="例如 xxx@qq.com" />
@@ -571,7 +626,10 @@ function applyPresetHtmlTemplates() {
                 <NSwitch v-model:value="form.webdav_enabled" />
               </NFormItem>
               <NFormItem label="Base URL">
-                <NInput v-model:value="form.webdav_base_url" placeholder="例如 https://webdav.example.com/webdav" />
+                <NInput
+                  v-model:value="form.webdav_base_url"
+                  placeholder="例如 https://webdav.example.com/webdav"
+                />
               </NFormItem>
               <NFormItem label="用户名">
                 <NInput v-model:value="form.webdav_username" placeholder="请输入WebDAV用户名" />
@@ -585,13 +643,32 @@ function applyPresetHtmlTemplates() {
                 />
               </NFormItem>
               <NFormItem label="默认分享时长(小时)">
-                <NInputNumber v-model:value="form.webdav_share_default_expire_hours" :min="1" :max="8760" />
+                <NInputNumber
+                  v-model:value="form.webdav_share_default_expire_hours"
+                  :min="1"
+                  :max="8760"
+                />
+              </NFormItem>
+              <NFormItem label="签名有效期(秒)">
+                <NInputNumber v-model:value="form.webdav_signature_ttl" :min="1" :max="86400" />
+              </NFormItem>
+              <NFormItem label="最大上传大小(Byte)">
+                <NInputNumber
+                  v-model:value="form.webdav_max_upload_size"
+                  :min="1"
+                  :max="1073741824"
+                />
               </NFormItem>
               <NFormItem label="签名密钥">
-                <NInput v-model:value="form.webdav_signature_secret" placeholder="用于外链签名校验（可选）" />
+                <NInput
+                  v-model:value="form.webdav_signature_secret"
+                  placeholder="用于外链签名校验（可选）"
+                />
               </NFormItem>
               <NFormItem>
-                <NButton type="primary" ghost :loading="webdavTesting" @click="testWebdavConnection">测试连接</NButton>
+                <NButton type="primary" ghost :loading="webdavTesting" @click="testWebdavConnection"
+                  >测试连接</NButton
+                >
               </NFormItem>
             </NCard>
           </NTabPane>
@@ -601,7 +678,9 @@ function applyPresetHtmlTemplates() {
               验证码模板支持变量：{code}、{minutes}；审核模板支持变量：{contact_name}、{register_type}、{reason}；管理员重置通知支持变量：{username}、{password}、{email}；工单提醒支持变量：{name}、{ticket_no}、{title}、{status}、{operator}
             </NAlert>
             <div class="mb-12" flex items-center gap-12>
-              <NButton type="primary" ghost @click="applyPresetHtmlTemplates">一键应用推荐HTML模板</NButton>
+              <NButton type="primary" ghost @click="applyPresetHtmlTemplates"
+                >一键应用推荐HTML模板</NButton
+              >
               <NButton type="default" @click="openPreview">预览模板效果</NButton>
             </div>
 
@@ -729,7 +808,11 @@ function applyPresetHtmlTemplates() {
             :autosize="{ minRows: 3, maxRows: 6 }"
             readonly
           />
-          <div v-else class="preview-html" v-html="renderSafeTemplate(form.email_verify_template, previewParams)"></div>
+          <div
+            v-else
+            class="preview-html"
+            v-html="renderSafeTemplate(form.email_verify_template, previewParams)"
+          ></div>
         </NFormItem>
 
         <NDivider title-placement="left">找回密码验证码</NDivider>
@@ -747,7 +830,11 @@ function applyPresetHtmlTemplates() {
             :autosize="{ minRows: 3, maxRows: 6 }"
             readonly
           />
-          <div v-else class="preview-html" v-html="renderSafeTemplate(form.reset_password_template, previewParams)"></div>
+          <div
+            v-else
+            class="preview-html"
+            v-html="renderSafeTemplate(form.reset_password_template, previewParams)"
+          ></div>
         </NFormItem>
 
         <NDivider title-placement="left">审核通过通知</NDivider>
@@ -765,7 +852,11 @@ function applyPresetHtmlTemplates() {
             :autosize="{ minRows: 3, maxRows: 6 }"
             readonly
           />
-          <div v-else class="preview-html" v-html="renderSafeTemplate(form.register_review_approve_template, previewParams)"></div>
+          <div
+            v-else
+            class="preview-html"
+            v-html="renderSafeTemplate(form.register_review_approve_template, previewParams)"
+          ></div>
         </NFormItem>
 
         <NDivider title-placement="left">审核驳回通知</NDivider>
@@ -783,7 +874,11 @@ function applyPresetHtmlTemplates() {
             :autosize="{ minRows: 3, maxRows: 6 }"
             readonly
           />
-          <div v-else class="preview-html" v-html="renderSafeTemplate(form.register_review_reject_template, previewParams)"></div>
+          <div
+            v-else
+            class="preview-html"
+            v-html="renderSafeTemplate(form.register_review_reject_template, previewParams)"
+          ></div>
         </NFormItem>
 
         <NDivider title-placement="left">管理员重置密码通知</NDivider>
@@ -801,7 +896,11 @@ function applyPresetHtmlTemplates() {
             :autosize="{ minRows: 3, maxRows: 6 }"
             readonly
           />
-          <div v-else class="preview-html" v-html="renderSafeTemplate(form.admin_reset_password_template, previewParams)"></div>
+          <div
+            v-else
+            class="preview-html"
+            v-html="renderSafeTemplate(form.admin_reset_password_template, previewParams)"
+          ></div>
         </NFormItem>
 
         <NDivider title-placement="left">工单提醒</NDivider>
@@ -819,7 +918,11 @@ function applyPresetHtmlTemplates() {
             :autosize="{ minRows: 3, maxRows: 6 }"
             readonly
           />
-          <div v-else class="preview-html" v-html="renderSafeTemplate(form.ticket_notify_template, previewParams)"></div>
+          <div
+            v-else
+            class="preview-html"
+            v-html="renderSafeTemplate(form.ticket_notify_template, previewParams)"
+          ></div>
         </NFormItem>
       </NModal>
     </n-spin>

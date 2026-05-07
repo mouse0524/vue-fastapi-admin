@@ -33,6 +33,14 @@ async def _get_user_role_names(user: User) -> list[str]:
     return [role.name for role in roles]
 
 
+def _can_access_ticket(ticket: Ticket, user: User, role_names: list[str]) -> bool:
+    if user.is_superuser or "管理员" in role_names or "客服" in role_names:
+        return True
+    if "技术" in role_names:
+        return ticket.submitter_id == user.id or ticket.tech_id == user.id
+    return ticket.submitter_id == user.id
+
+
 @router.post("/upload", summary="上传工单附件", dependencies=[DependAuth])
 async def upload_ticket_attachment(file: UploadFile = File(...)):
     user_id = CTX_USER_ID.get()
@@ -166,13 +174,8 @@ async def get_ticket(ticket_id: int = Query(..., description="工单ID")):
     perm_start_at = perf_counter()
     role_names = await _get_user_role_names(user)
     ticket = await Ticket.get(id=ticket_id)
-    if not user.is_superuser and "管理员" not in role_names and "客服" not in role_names:
-        if "技术" in role_names:
-            can_view = ticket.tech_id == user.id
-            if not can_view:
-                return Fail(code=403, msg="您暂无权限查看该工单")
-        elif ticket.submitter_id != user.id:
-            return Fail(code=403, msg="您暂无权限查看该工单")
+    if not _can_access_ticket(ticket, user, role_names):
+        return Fail(code=403, msg="您暂无权限查看该工单")
     perm_cost_ms = int((perf_counter() - perm_start_at) * 1000)
 
     detail_start_at = perf_counter()
@@ -308,6 +311,11 @@ async def update_ticket(payload: TicketUpdateIn):
 
 @router.get("/actions", summary="工单操作日志", dependencies=[DependAuth])
 async def ticket_actions(ticket_id: int = Query(..., description="工单ID")):
+    user = await _get_current_user()
+    role_names = await _get_user_role_names(user)
+    ticket = await Ticket.get(id=ticket_id)
+    if not _can_access_ticket(ticket, user, role_names):
+        return Fail(code=403, msg="您暂无权限查看该工单")
     logs = await TicketActionLog.filter(ticket_id=ticket_id).order_by("id")
     data = [await item.to_dict() for item in logs]
     return Success(data=data)

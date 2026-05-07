@@ -12,24 +12,11 @@ from app.log import logger
 from app.models.admin import User
 from app.schemas.base import Fail, Success, SuccessExtra
 from app.schemas.webdav import WebDavShareCreateIn, WebDavShareDeleteIn
-from app.settings import settings
 from app.utils.http_headers import build_download_content_disposition
+from app.utils.request import get_client_ip
 
 router = APIRouter(dependencies=[DependAuth])
 public_router = APIRouter()
-
-
-def _get_client_ip(request: Request) -> str:
-    if settings.TRUST_PROXY_HEADERS:
-        forwarded_for = request.headers.get("x-forwarded-for")
-        if forwarded_for:
-            return forwarded_for.split(",")[0].strip()
-        real_ip = request.headers.get("x-real-ip")
-        if real_ip:
-            return real_ip.strip()
-    if request.client and request.client.host:
-        return request.client.host
-    return "unknown"
 
 
 @router.get("/list", summary="WebDAV文件列表")
@@ -106,7 +93,7 @@ async def webdav_share_download(
     if ts is None or not isinstance(ts, int) or ts <= 0 or not sig:
         return Fail(code=400, msg="分享链接缺少签名参数，请重新复制最新下载链接")
 
-    client_ip = _get_client_ip(request)
+    client_ip = get_client_ip(request)
     fail_key = f"webdav:share:fail:{client_ip}:{code}"
     blocked_key = f"webdav:share:blocked:{client_ip}:{code}"
     try:

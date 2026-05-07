@@ -40,8 +40,13 @@
     "vue-router": "^4.2.4"
   },
   "devDependencies": {
+    "@unocss/eslint-plugin": "^0.55.0",
     "@vitejs/plugin-vue": "^4.2.3",
-    "vite": "^4.4.6"
+    "eslint-plugin-prettier": "^5.5.5",
+    "eslint-plugin-vue": "^9.33.0",
+    "prettier": "^3.8.3",
+    "vite": "^4.4.6",
+    "vue-eslint-parser": "^9.4.3"
   },
   "lint-staged": {
     "*.{js,vue}": [
