@@ -14,7 +14,7 @@ ENV PATH=${PNPM_HOME}:${PATH}
 COPY --from=node /usr/local /usr/local
 
 # 启用 pnpm。开发镜像不安装 apt 包，避免构建卡在 Debian 包下载。
-RUN corepack enable \
+RUN corepack enable pnpm \
     && corepack prepare pnpm@9.15.9 --activate \
     && pnpm config set registry https://registry.npmmirror.com
 
