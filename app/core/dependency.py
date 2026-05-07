@@ -4,6 +4,7 @@ import jwt
 from fastapi import Depends, Header, HTTPException, Request
 
 from app.core.ctx import CTX_USER_ID, CTX_USER_NAME
+from app.log import logger
 from app.models import Role, User
 from app.settings import settings
 
@@ -31,7 +32,8 @@ class AuthControl:
             raise HTTPException(status_code=401, detail="无效的Token")
         except jwt.ExpiredSignatureError:
             raise HTTPException(status_code=401, detail="登录已过期")
-        except Exception:
+        except Exception as exc:
+            logger.warning("[auth] token verification failed error={}", repr(exc))
             raise HTTPException(status_code=500, detail="认证失败")
 
 
