@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import tempfile
 import uuid
 from datetime import datetime
 from pathlib import Path
@@ -12,7 +13,8 @@ from app.models.admin import SkillKnowDocument, SkillKnowSkill
 from app.models.enums import SkillKnowDocumentStatus, SkillKnowSkillCategory, SkillKnowSkillType
 from app.schemas.skill_know import SkillKnowSkillIn
 from app.services.skill_know.content_analyzer import skill_know_content_analyzer
-from app.services.skill_know.document_parser import skill_know_document_parser
+from app.services.skill_know.document_index_service import skill_know_document_index_service
+from app.services.skill_know.document_parser import SUPPORTED_MARKDOWN_UPLOAD_EXTENSIONS, SUPPORTED_MARKDOWN_UPLOAD_MESSAGE, skill_know_document_parser
 from app.services.skill_know.graph_service import skill_know_graph_service
 from app.services.skill_know.skill_service import skill_know_skill_service
 from app.services.skill_know.utils import document_to_dict, make_uri, new_uuid, sha256_text
@@ -25,47 +27,77 @@ class SkillKnowDocumentService:
         os.makedirs(path, exist_ok=True)
         return path
 
+    def _temp_dir(self) -> str:
+        path = os.path.join(tempfile.gettempdir(), "skill_know_uploads")
+        os.makedirs(path, exist_ok=True)
+        return path
+
     async def upload(self, file: UploadFile, *, title: str | None = None, folder_id: int | None = None) -> dict:
         filename = (file.filename or "").strip()
         if not filename:
             raise HTTPException(status_code=400, detail="文件名不能为空")
         ext = Path(filename).suffix.lower().lstrip(".") or "txt"
-        if ext not in {"txt", "md", "markdown", "pdf", "docx", "doc"}:
-            raise HTTPException(status_code=400, detail="仅支持 txt、md、pdf、docx 文档")
-        stored_name = f"{uuid.uuid4().hex}.{ext}"
+        if ext not in SUPPORTED_MARKDOWN_UPLOAD_EXTENSIONS:
+            raise HTTPException(status_code=400, detail=SUPPORTED_MARKDOWN_UPLOAD_MESSAGE)
+        uid = uuid.uuid4().hex
+        stored_name = f"{uid}.md"
         abs_path = os.path.join(self._upload_dir(), stored_name)
+        temp_path = os.path.join(self._temp_dir(), f"{uid}.{ext}")
         content_bytes = await file.read()
         if len(content_bytes) > settings.MAX_UPLOAD_SIZE:
             raise HTTPException(status_code=400, detail="文件大小超限")
-        with open(abs_path, "wb") as f:
+        with open(temp_path, "wb") as f:
             f.write(content_bytes)
         doc_title = title or filename
         document = await SkillKnowDocument.create(
             uuid=new_uuid(),
-            uri=make_uri("documents", uuid.uuid4().hex),
+            uri=make_uri("documents", uid),
             title=doc_title,
             filename=filename,
             file_path=abs_path,
-            file_size=len(content_bytes),
-            file_type=ext,
+            file_size=0,
+            file_type="md",
             folder_id=folder_id,
+            extra_metadata={
+                "original_filename": filename,
+                "original_file_type": ext,
+                "original_file_size": len(content_bytes),
+                "converted_by": "markitdown",
+                "index_status": "pending",
+            },
             status=SkillKnowDocumentStatus.PROCESSING,
         )
         try:
-            content = await skill_know_document_parser.parse(abs_path, ext)
+            content = await skill_know_document_parser.convert_to_markdown(temp_path, ext)
+            content_data = content.encode("utf-8", errors="ignore")
+            with open(abs_path, "wb") as f:
+                f.write(content_data)
             analysis = await skill_know_content_analyzer.analyze(doc_title, content)
             document.content = content
             document.content_hash = sha256_text(content)
+            document.file_size = len(content_data)
             document.abstract = analysis["abstract"]
             document.overview = analysis["overview"]
             document.category = analysis["category"]
             document.tags = analysis["tags"]
+            try:
+                index_result = await skill_know_document_index_service.rebuild(document)
+            except Exception as index_exc:
+                index_result = {"index_status": "failed", "index_error": str(index_exc), "chunk_count": 0}
+            metadata = dict(document.extra_metadata or {})
+            metadata.update(index_result)
+            document.extra_metadata = metadata
             document.status = SkillKnowDocumentStatus.COMPLETED
             await document.save()
         except Exception as exc:
             document.status = SkillKnowDocumentStatus.FAILED
             document.error_message = str(exc)
             await document.save()
+        finally:
+            try:
+                os.remove(temp_path)
+            except OSError:
+                pass
         return await document_to_dict(document)
 
     async def list(self, *, page: int, page_size: int, folder_id=None, category=None, status=None, is_converted=None) -> tuple[int, list[dict]]:
@@ -103,6 +135,16 @@ class SkillKnowDocumentService:
         document = await SkillKnowDocument.filter(id=document_id).first()
         if not document:
             raise HTTPException(status_code=404, detail="文档不存在")
+        await skill_know_document_index_service.delete(document)
+        if document.file_path:
+            try:
+                path = Path(document.file_path)
+                upload_root = Path(settings.UPLOAD_DIR).resolve()
+                if path.exists() and upload_root in path.resolve().parents:
+                    path.unlink()
+            except OSError:
+                pass
+        await SkillKnowSkill.filter(source_document_id=document.id).update(source_document_id=None)
         await document.delete()
 
     async def move(self, target_id: int, folder_id: int | None) -> dict:

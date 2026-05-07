@@ -130,12 +130,12 @@ function statusText(status) {
     <div class="sk-theme-page">
     <div class="sk-hero">
       <h2 class="sk-hero-title">文档入库与 Skill 转化</h2>
-      <p class="sk-hero-sub">上传文档后自动解析 L0/L1/L2，可一键转换为 Skill 并进入知识图谱与检索链路。</p>
+      <p class="sk-hero-sub">上传文件后自动转换为 Markdown，生成分块并建立向量检索索引，可一键沉淀为 Skill。</p>
     </div>
     <div class="doc-shell">
       <NCard class="doc-sidebar" :bordered="false">
         <NSpace vertical>
-          <input ref="fileInput" type="file" class="hidden" accept=".txt,.md,.markdown,.pdf,.doc,.docx" @change="uploadFile" />
+          <input ref="fileInput" type="file" class="hidden" accept=".pdf,.pptx,.docx,.xlsx,.html,.htm,.csv,.json,.xml,.txt,.md,.markdown" @change="uploadFile" />
           <div class="sk-toolbar-row">
             <NButton class="sk-btn" type="primary" :loading="uploading" @click="fileInput?.click()">上传文档</NButton>
             <NButton class="sk-btn" secondary :loading="loading" @click="loadAll">刷新</NButton>
@@ -169,7 +169,11 @@ function statusText(status) {
                 @click="selected = item"
               >
                 <div class="item-title">📄 {{ item.title }}</div>
-                <div class="item-desc">{{ item.file_type?.toUpperCase() }} · {{ Math.max(1, item.file_size / 1024).toFixed(1) }} KB</div>
+                <div class="item-desc">
+                  {{ item.file_type?.toUpperCase() }}
+                  <span v-if="item.extra_metadata?.original_file_type"> · 原始 {{ item.extra_metadata.original_file_type.toUpperCase() }}</span>
+                  · {{ Math.max(1, item.file_size / 1024).toFixed(1) }} KB
+                </div>
                 <NSpace size="small" class="item-tags">
                   <span class="sk-status" :class="item.status === 'completed' ? 'success' : item.status === 'failed' ? 'error' : 'warning'">{{ statusText(item.status) }}</span>
                   <NTag v-if="item.is_converted" size="small" type="info">已转 Skill</NTag>
@@ -191,13 +195,13 @@ function statusText(status) {
           </NSpace>
           <NGrid :cols="4" :x-gap="12" class="metric-grid">
             <NGi><NCard size="small"><div class="metric-label">状态</div><b>{{ statusText(selected.status) }}</b></NCard></NGi>
-            <NGi><NCard size="small"><div class="metric-label">类型</div><b>{{ selected.file_type }}</b></NCard></NGi>
+            <NGi><NCard size="small"><div class="metric-label">类型</div><b>{{ selected.file_type }}<span v-if="selected.extra_metadata?.original_file_type"> / {{ selected.extra_metadata.original_file_type }}</span></b></NCard></NGi>
             <NGi><NCard size="small"><div class="metric-label">分类</div><b>{{ selected.category || '-' }}</b></NCard></NGi>
-            <NGi><NCard size="small"><div class="metric-label">Skill</div><b>{{ selected.is_converted ? '已转换' : '未转换' }}</b></NCard></NGi>
+            <NGi><NCard size="small"><div class="metric-label">索引</div><b>{{ selected.extra_metadata?.index_status || '-' }}<span v-if="selected.extra_metadata?.chunk_count"> / {{ selected.extra_metadata.chunk_count }} 块</span></b></NCard></NGi>
           </NGrid>
           <NCard size="small" title="L0 Abstract" class="section-card">{{ selected.abstract || '-' }}</NCard>
           <NCard size="small" title="L1 Overview" class="section-card"><pre>{{ selected.overview || '-' }}</pre></NCard>
-          <NCard size="small" title="L2 Content" class="section-card"><pre>{{ selected.content || selected.error_message || '-' }}</pre></NCard>
+          <NCard size="small" title="Markdown Content" class="section-card"><pre>{{ selected.content || selected.error_message || '-' }}</pre></NCard>
         </template>
         <NEmpty v-else description="请选择文档" />
       </NCard>

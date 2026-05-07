@@ -53,6 +53,37 @@ class SkillKnowChatService:
         prompt = await SkillKnowPrompt.filter(key="system.chat", is_active=True).first()
         return prompt.content if prompt else "你是 Skill-Know 知识库助手。"
 
+    def _render_context(self, items: list[dict]) -> str:
+        blocks = []
+        for idx, item in enumerate(items, start=1):
+            score = item.get("score")
+            if item.get("source_type") == "document":
+                blocks.append(
+                    "\n".join([
+                        f"[文档片段 {idx}]",
+                        f"标题：{item.get('title') or '-'}",
+                        f"原文件：{item.get('filename') or '-'}",
+                        f"章节：{item.get('heading') or '-'}",
+                        f"匹配分：{score}",
+                        "```markdown",
+                        str(item.get("content") or "")[:2200],
+                        "```",
+                    ])
+                )
+            else:
+                blocks.append(
+                    "\n".join([
+                        f"[Skill {idx}]",
+                        f"名称：{item.get('name') or '-'}",
+                        f"分类：{item.get('category') or '-'}",
+                        f"匹配分：{score}",
+                        "```markdown",
+                        str(item.get("overview") or item.get("content") or "")[:1600],
+                        "```",
+                    ])
+                )
+        return "\n\n".join(blocks)
+
     async def chat(self, message: str, conversation_id: int | None = None) -> dict:
         content = ""
         async for item in self.stream(message, conversation_id=conversation_id):
@@ -95,8 +126,10 @@ class SkillKnowChatService:
         timeline.append(support_event)
         yield support_event
 
-        skills = await skill_know_retriever.retrieve(message, limit=6)
-        search_event = event("search.results", {"query": message, "items": skills, "total": len(skills)})
+        context_items = await skill_know_retriever.retrieve_context(message, limit=10)
+        skills = [item for item in context_items if item.get("source_type") == "skill"]
+        documents = [item for item in context_items if item.get("source_type") == "document"]
+        search_event = event("search.results", {"query": message, "items": context_items, "documents": documents, "skills": skills, "total": len(context_items)})
         timeline.append(search_event)
         yield search_event
 
@@ -109,15 +142,13 @@ class SkillKnowChatService:
         timeline.append(tools_event)
         yield tools_event
 
-        context = "\n\n".join(
-            f"### {skill['name']}\n摘要：{skill.get('abstract') or skill.get('description')}\n内容：{skill.get('overview') or skill.get('content', '')[:1200]}"
-            for skill in skills[:5]
-        )
+        context = self._render_context(context_items[:8])
         support_context = json.dumps(support_event["payload"], ensure_ascii=False)
         messages = [
             {"role": "system", "content": await self._system_prompt()},
+            {"role": "system", "content": "回答必须优先依据检索到的 Markdown 片段和 Skill；如果知识库内容不足，请明确说明缺少哪些信息，不要编造。"},
             {"role": "system", "content": f"产品问题匹配结果：\n{support_context}"},
-            {"role": "system", "content": f"已检索到的知识上下文：\n{context}" if context else "当前没有检索到相关 Skill。"},
+            {"role": "system", "content": f"已检索到的知识上下文：\n{context}" if context else "当前没有检索到相关知识库内容。"},
             {"role": "user", "content": message},
         ]
 

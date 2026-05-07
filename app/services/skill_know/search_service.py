@@ -11,12 +11,17 @@ class SkillKnowSearchService:
     ALLOWED_TABLES = {"sk_skill", "sk_document", "sk_folder", "sk_prompt"}
 
     async def unified(self, query: str, *, search_type: str | None = None, limit: int = 20) -> dict:
-        result = {"query": query, "skills": [], "documents": [], "total": 0}
+        result = {"query": query, "skills": [], "documents": [], "chunks": [], "items": [], "total": 0}
         if search_type in {None, "all", "skill"}:
-            result["skills"] = await skill_know_retriever.retrieve(query, limit=limit)
+            result["skills"] = await skill_know_retriever.retrieve_skills(query, limit=limit)
         if search_type in {None, "all", "document"}:
             result["documents"] = await skill_know_document_service.search(query, limit=limit)
-        result["total"] = len(result["skills"]) + len(result["documents"])
+            result["chunks"] = await skill_know_retriever.retrieve_document_chunks(query, limit=limit)
+        if search_type in {None, "all"}:
+            result["items"] = await skill_know_retriever.retrieve_context(query, limit=limit)
+        else:
+            result["items"] = [*result["chunks"], *result["skills"]]
+        result["total"] = len(result["items"]) or (len(result["skills"]) + len(result["documents"]) + len(result["chunks"]))
         return result
 
     async def sql(self, query: str) -> dict:
