@@ -29,7 +29,7 @@ class SystemSettingController:
 
     _DEFAULTS = {
         "site": {
-            "site_title": "Vue FastAPI Admin",
+            "site_title": "安得和众用户服务中心",
             "site_logo": None,
             "allow_partner_register": True,
         },

@@ -401,7 +401,13 @@ async def init_apis():
 
 async def init_db():
     await Tortoise.init(config=settings.TORTOISE_ORM)
-    await Tortoise.generate_schemas(safe=True)
+    try:
+        await Tortoise.generate_schemas(safe=True)
+    except Exception as exc:
+        if "already exists" in str(exc).lower():
+            logger.warning("[init_db] schema generation skipped because tables already exist: {}", exc)
+            return
+        raise
 
 
 async def init_roles():

@@ -1,8 +1,8 @@
 FROM node:20-alpine AS web
 
-WORKDIR /opt/vue-fastapi-admin
+WORKDIR /opt/iandsec-uc
 COPY /web ./web
-RUN cd /opt/vue-fastapi-admin/web \
+RUN cd /opt/iandsec-uc/web \
     && corepack enable \
     && corepack prepare pnpm@9.15.9 --activate \
     && pnpm config set registry https://registry.npmmirror.com \
@@ -12,7 +12,7 @@ RUN cd /opt/vue-fastapi-admin/web \
 
 FROM python:3.11-slim-bullseye
 
-WORKDIR /opt/vue-fastapi-admin
+WORKDIR /opt/iandsec-uc
 ADD . .
 COPY /deploy/entrypoint.sh .
 
@@ -27,7 +27,7 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked,id=core-apt \
 
 RUN pip install -r requirements.txt -i https://pypi.tuna.tsinghua.edu.cn/simple
 
-COPY --from=web /opt/vue-fastapi-admin/web/dist /opt/vue-fastapi-admin/web/dist
+COPY --from=web /opt/iandsec-uc/web/dist /opt/iandsec-uc/web/dist
 ADD /deploy/web.conf /etc/nginx/sites-available/web.conf
 RUN rm -f /etc/nginx/sites-enabled/default \
     && ln -s /etc/nginx/sites-available/web.conf /etc/nginx/sites-enabled/ 

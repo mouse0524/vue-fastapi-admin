@@ -35,7 +35,7 @@ const logoUploading = ref(false)
 const previewVisible = ref(false)
 const appStore = useAppStore()
 const form = ref({
-  site_title: 'Vue FastAPI Admin',
+  site_title: '安得和众用户服务中心',
   site_logo: '',
   allow_partner_register: true,
   ticket_attachment_extensions: ['zip', 'rar', 'png', 'jpg', 'gif'],

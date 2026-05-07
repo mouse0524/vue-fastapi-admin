@@ -16,7 +16,7 @@ export const useAppStore = defineStore('app', {
       aliveKeys: {},
       isDark,
       locale: currentLocale || 'en',
-      siteTitle: import.meta.env.VITE_TITLE || 'Vue FastAPI Admin',
+      siteTitle: import.meta.env.VITE_TITLE || '安得和众用户服务中心',
       siteLogo: '',
       allowPartnerRegister: true,
       ticketAttachmentExtensions: ['zip', 'rar', 'png', 'jpg', 'gif'],

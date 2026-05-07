@@ -3,7 +3,7 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
-    container_name: vue-fastapi-admin-app
+    container_name: iandsec-uc-app
     depends_on:
       mysql:
         condition: service_healthy
@@ -21,13 +21,13 @@ services:
     ports:
       - "80:80"
     volumes:
-      - app_storage:/opt/vue-fastapi-admin/storage
-      - app_logs:/opt/vue-fastapi-admin/app/logs
+      - app_storage:/opt/iandsec-uc/storage
+      - app_logs:/opt/iandsec-uc/app/logs
     restart: unless-stopped
 
   mysql:
     image: mysql:8.0
-    container_name: vue-fastapi-admin-mysql
+    container_name: iandsec-uc-mysql
     environment:
       MYSQL_ROOT_PASSWORD: root_p82Ytd
       MYSQL_DATABASE: iandsec-user-center
@@ -52,7 +52,7 @@ services:
 
   redis:
     image: redis:7-alpine
-    container_name: vue-fastapi-admin-redis
+    container_name: iandsec-uc-redis
     command: redis-server --appendonly yes --requirepass redis_p82Ytd
     ports:
       - "6379:6379"

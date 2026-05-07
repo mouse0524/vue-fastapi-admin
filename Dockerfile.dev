@@ -3,7 +3,7 @@ FROM python:3.11-slim-bullseye
 # 使用阿里云镜像加速
 RUN sed -i 's/deb.debian.org/mirrors.aliyun.com/g' /etc/apt/sources.list
 
-WORKDIR /opt/vue-fastapi-admin
+WORKDIR /opt/iandsec-uc
 
 ENV PYTHONUNBUFFERED=1 \
     PIP_NO_CACHE_DIR=1 \

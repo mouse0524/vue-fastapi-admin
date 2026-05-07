@@ -13,6 +13,7 @@ export default defineConfig(({ command, mode }) => {
   const env = loadEnv(mode, process.cwd())
   const viteEnv = convertEnv(env)
   const { VITE_PORT, VITE_PUBLIC_PATH, VITE_USE_PROXY, VITE_BASE_API } = viteEnv
+  const shouldOpen = process.env.VITE_DEV_OPEN !== 'false' && process.env.CI !== 'true'
 
   return {
     base: VITE_PUBLIC_PATH || '/',
@@ -27,7 +28,7 @@ export default defineConfig(({ command, mode }) => {
     server: {
       host: '0.0.0.0',
       port: VITE_PORT,
-      open: true,
+      open: shouldOpen,
       proxy: VITE_USE_PROXY
         ? {
             [VITE_BASE_API]: PROXY_CONFIG[VITE_BASE_API],
