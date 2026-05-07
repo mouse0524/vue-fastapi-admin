@@ -5,8 +5,8 @@ services:
       dockerfile: Dockerfile.dev
     container_name: iandsec-uc-app-dev
     depends_on:
-      mysql:
-        condition: service_healthy
+      mysql-init:
+        condition: service_completed_successfully
       redis:
         condition: service_healthy
     environment:
@@ -63,6 +63,30 @@ services:
       timeout: 5s
       retries: 10
     restart: unless-stopped
+
+  mysql-init:
+    image: mysql:8.0
+    container_name: iandsec-uc-mysql-init
+    depends_on:
+      mysql:
+        condition: service_healthy
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-dev_root_password_change_me}
+      MYSQL_DATABASE: ${MYSQL_DATABASE:-iandsec-user-center}
+      MYSQL_USER: ${MYSQL_USER:-iandsec-user-center}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:-dev_mysql_password_change_me}
+    command:
+      - sh
+      - -c
+      - |
+        mysql -h mysql -uroot -p"$${MYSQL_ROOT_PASSWORD}" <<SQL
+        CREATE DATABASE IF NOT EXISTS \`$${MYSQL_DATABASE}\` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+        CREATE USER IF NOT EXISTS '$${MYSQL_USER}'@'%' IDENTIFIED BY '$${MYSQL_PASSWORD}';
+        ALTER USER '$${MYSQL_USER}'@'%' IDENTIFIED BY '$${MYSQL_PASSWORD}';
+        GRANT ALL PRIVILEGES ON \`$${MYSQL_DATABASE}\`.* TO '$${MYSQL_USER}'@'%';
+        FLUSH PRIVILEGES;
+        SQL
+    restart: "no"
 
   redis:
     image: redis:7-alpine
